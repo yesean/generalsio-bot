@@ -4,6 +4,7 @@
 
 // main.js
 const io = require('socket.io-client');
+const { verify } = require('crypto');
 
 const socket = io('http://botws.generals.io');
 //
@@ -44,28 +45,29 @@ let map = [];
 let index = -1;
 let currPath = [];
 let weightMap = [];
-let moves = [];
+let moves;
 let flip = false;
 let resetHead = false;
 let target = -1;
-let visitedHighTiles = [];
-const maxCities = 2;
+const maxCities = 5;
 let highTiles = [];
+let targetStack = [];
+let mainTarget = -1;
 
 patch = (old, diff) => {
   let out = [];
   let i = 0;
   while (i < diff.length) {
     // matching
-    if (diff[ i ]) {
-      out.push(...old.slice(out.length, out.length + diff[ i ]));
+    if (diff[i]) {
+      out.push(...old.slice(out.length, out.length + diff[i]));
     }
     ++i;
     // mismatching
-    if (i < diff.length && diff[ i ]) {
-      out.push(...diff.slice(i + 1, i + 1 + diff[ i ]));
+    if (i < diff.length && diff[i]) {
+      out.push(...diff.slice(i + 1, i + 1 + diff[i]));
     }
-    i += 1 + diff[ i ];
+    i += 1 + diff[i];
   }
   return out;
 };
@@ -78,7 +80,6 @@ socket.on('game_start', (data) => {
   console.log(
     `Game starting! The replay will be available after the game at ${replay_url}`
   );
-
 });
 
 socket.on('game_update', (data) => {
@@ -87,8 +88,8 @@ socket.on('game_update', (data) => {
   generals = data.generals;
 
   // map dimensions
-  const width = map[ 0 ];
-  const height = map[ 1 ];
+  const width = map[0];
+  const height = map[1];
   const size = width * height;
 
   // update army values
@@ -97,119 +98,102 @@ socket.on('game_update', (data) => {
   // update terrain values
   const terrain = map.slice(size + 2, size + 2 + size);
 
-  // set starting point depending if last move was dead end
-  crown = generals[ playerIndex ];
+  // set crown location
+  const crown = generals[playerIndex];
 
   // initialize index
   if (index === -1) {
     index = crown;
-    weightMap[ crown ] = 0;
+    weightMap[crown] = 0;
   }
 
-  // keep track of high tiles
-  highTiles = terrain.filter(t => t === playerIndex).sort((a, b) => armies[ b ] - armies[ a ]);
-
-  // reset head if head goes to one
-  resetHead = false;
-  if (armies[ index ] <= 1 || terrain[ index ] !== playerIndex) {
-    resetHead = true;
-  }
-
-  // // target cities
+  // update game state
   const turn = data.turn;
-  const numOwnedCities = cities.filter(c => terrain[ c ] === playerIndex).length;
-  // if (target === -1 && turn % 10 === 0 && numOwnedCities < Math.floor(turn / 100) && numOwnedCities < maxCities && cities.length >= Math.floor(turn / 100)) {
-  //   console.log(`at turn ${turn}`);
-  //   console.log(`currently own ${numOwnedCities} cities`);
-  //   target = cities.find(city => terrain[ city ] === TILE_EMPTY);
-  //   if (typeof target === 'undefined') {
-  //     target = -1;
-  //   }
-  //   console.log(`targeting city ${target}`);
-  //   console.log('\n');
-  // }
+  const myArmy = terrain
+    .map((t, i) => ({ tile: t, index: i }))
+    .filter((t) => t.tile === playerIndex)
+    .map((t) => t.index);
+  const myCities = cities.filter((c) => terrain[c] === playerIndex);
+  const highTileStack = myArmy.sort((a, b) => armies[a] - armies[b]).slice();
 
-  // use largest tile as starting index unless current head is still available
-  if (resetHead) {
-    const myArmy = terrain
-      .map((t, i) => (t === playerIndex ? i : -1))
-      .filter((t) => t !== -1);
-
-    index = myArmy.reduce((max, tile) => {
-      if (armies[ tile ] > armies[ max ]) {
-        return tile;
-      } else {
-        return max;
-      }
-    });
-    currPath = [];
-    currPath[ index ] = 1;
-    weightMap[ index ]++;
-  }
-
-  // row and col of curr square
   const row = Math.floor(index / width);
   const col = index % width;
-
-  // center position
-  const numTroops = terrain.filter(t => t === playerIndex).length;
-  const avgRow = Math.floor(terrain.reduce((sum, tile, i) => (tile === playerIndex) ? sum + Math.floor(i / width) : sum, 0) / numTroops);
-  const avgCol = Math.floor(terrain.reduce((sum, tile, i) => (tile === playerIndex) ? sum + i % width : sum, 0) / numTroops);
-  const center = avgRow * width + avgCol;   // based on center of army
-
-  // underweight blank tiles
-  terrain.map((t, i) => {
-    if (t === TILE_EMPTY || t === TILE_FOG) {
-      weightMap[ i ] = -10;
-    }
-  });
+  const numTroops = myArmy.length;
+  const avgRow = Math.floor(
+    myArmy.reduce((sum, t) => sum + Math.floor(t.index / width), 0) / numTroops
+  );
+  const avgCol = Math.floor(
+    myArmy.reduce((sum, t) => sum + (t.index % width), 0) / numTroops
+  );
+  const center = avgRow * width + avgCol; // based on center of army
 
   // underweight paths to opponent
-  let opponent = generals.find((g) => g !== playerIndex);
+  const opponent = generals.find((g) => g !== crown);
+
   const opRow = Math.floor(opponent / width);
   const opCol = opponent % width;
 
+  // reset head if head goes to one
+  resetHead = false;
+  if (armies[index] <= 1 || terrain[index] !== playerIndex) {
+    resetHead = true;
+  }
+
+  // use largest tile as starting index unless current head is still available
+  if (resetHead) {
+    index = highTileStack.pop();
+    currPath = [];
+    currPath[index] = 1;
+    weightMap[index]++;
+  }
+
+  const head = armies[index];
+
+  console.log(`head at ${index} with ${head} troops`);
+
   // give mountains infinite weight
-  // underweight higher tiles
+  // underweight blank tiles
   terrain.map((t, i) => {
     if (t === TILE_MOUNTAIN) {
-      weightMap[ i ] = Number.MAX_SAFE_INTEGER;
+      weightMap[i] = Number.MAX_SAFE_INTEGER;
+    } else if (t === TILE_EMPTY || t === TILE_FOG) {
+      weightMap[i] = -1;
     }
   });
 
   // adjust move vector based on center quadrant
   const up = avgRow < Math.floor(height / 2);
   const left = avgCol < Math.floor(width / 2);
-  const vertical = [ -width, width ];
-  const sides = [ -1, 1 ];
+  let vMoves = [-width, width];
+  let hMoves = [-1, 1];
+  moves = [];
   if (flip) {
     if (up) {
-      moves.push(vertical.pop());
+      moves.push(vMoves.pop());
     } else {
-      moves.push(vertical.shift());
+      moves.push(vMoves.shift());
     }
     if (left) {
-      moves.push(sides.pop());
+      moves.push(hMoves.pop());
     } else {
-      moves.push(sides.shift());
+      moves.push(hMoves.shift());
     }
-    moves.push(vertical.pop());
-    moves.push(sides.pop());
+    moves.push(vMoves.pop());
+    moves.push(hMoves.pop());
   } else {
     if (left) {
-      moves.push(sides.pop());
+      moves.push(hMoves.pop());
     } else {
-      moves.push(sides.shift());
+      moves.push(hMoves.shift());
     }
     if (up) {
-      moves.push(vertical.pop());
+      moves.push(vMoves.pop());
     } else {
-      moves.push(vertical.shift());
+      moves.push(vMoves.shift());
     }
-    moves.push(sides.pop());
-    moves.push(vertical.pop());
+    moves.push(hMoves.pop());
+    moves.push(vMoves.pop());
   }
-  flip = !flip;   // move in a diagonal pattern
 
   // filter out illegal moves
   if (row === 0) {
@@ -225,110 +209,158 @@ socket.on('game_update', (data) => {
     moves = moves.filter((m) => m !== 1);
   }
 
-  console.log(`surrounding cells have weights: `);
+  // console.log(`surrounding cells have weights: `);
+  let bestEndIndex = moves
+    .map((move) => {
+      let endIndex = index + move;
+      let extraWeight = 0;
 
-  let bestEndIndex =
-    moves
-      .map(move => {
-        let endIndex = index + move;
-        let extraWeight = 0;
+      // add weight to previous squares in path
+      if (currPath[endIndex] > 0) {
+        extraWeight = size * currPath[endIndex];
+      }
 
-        // add weight to previous squares in path
-        if (currPath[ endIndex ] > 0) {
-          extraWeight = size * currPath[ endIndex ];
+      // if possible try to capture a city
+      // add weight to cities
+      if (cities.indexOf(endIndex) >= 0) {
+        if (armies[index] > armies[endIndex] + 1) {
+          extraWeight += -1;
+        } else {
+          extraWeight += size;
         }
+      }
 
-        // if possible try to capture a city
-        // add weight to cities
-        if (cities.indexOf(endIndex) >= 0) {
-          if (armies[ index ] > armies[ endIndex ] + 1) {
-            extraWeight += -1;
-          } else {
-            extraWeight += size;
-          }
+      // underweight reasonably high tiles
+      const avgTroops =
+        Math.floor(
+          myArmy.reduce((sum, t) => sum + armies[t.index]),
+          0
+        ) / numTroops;
+      if (
+        armies[endIndex] > 1 &&
+        terrain[endIndex] === playerIndex &&
+        armies[index] < avgTroops
+      ) {
+        extraWeight -= armies[endIndex];
+      }
+
+      // underweight low enemy tiles
+      if (myArmy.indexOf(endIndex) === -1) {
+        // after turn 200, try to attack enemy territory at all costs
+        if (turn > 200) {
+          extraWeight -= size;
+        } else {
+          extraWeight += armies[endIndex];
         }
+      }
 
-        const avgTroops = Math.floor(terrain.map((sum, tile, i) => tile === playerIndex ? sum + armies[ i ] : sum, 0) / numTroops);
-        if (armies[ endIndex ] > 1 && terrain[ endIndex ] === playerIndex && armies[ index ] < avgTroops) {
-          extraWeight -= armies[ endIndex ];
-        }
+      return { endIndex: endIndex, weight: weightMap[endIndex] + extraWeight };
+    })
+    .reduce(
+      (min, move) => {
+        // console.log(move.weight);
 
-        if (terrain[ endIndex ] !== playerIndex && terrain[ endIndex ] > 0) {
-          if (turn > 200) {
-            extraWeight -= size;
-          } else {
-            extraWeight -= 1.5;
-          }
-        }
+        return move.weight < min.weight ? move : min;
+      },
+      { weight: Number.MAX_SAFE_INTEGER }
+    ).endIndex;
 
-        return { 'endIndex': endIndex, 'weight': weightMap[ endIndex ] + extraWeight };
-      })
-      .reduce((min, move) => {
-        console.log(move.weight);
+  // console.log('\n');
 
-        return move.weight < min.weight
-          ? move
-          : min;
-      }, { 'weight': Number.MAX_SAFE_INTEGER })
-      .endIndex;
-
-  console.log('\n');
-
-  // go to high tiles when seeking general
-  if (opponent !== -1) {
-    target = opponent;
-
-    if (armies[ index ] < armies[ opponent ] && target === -1) {
-      target = highTiles.find(tile => visitedHighTiles.indexOf(tile) === -1);
-      visitedHighTiles.push(target);
-    }
+  // target cities
+  const numOwnedCities = myCities.length;
+  if (
+    mainTarget === -1 &&
+    turn % 10 === 0 &&
+    numOwnedCities < Math.floor(turn / 100) &&
+    numOwnedCities < maxCities &&
+    cities.length > numOwnedCities
+  ) {
+    console.log(`at turn ${turn}`);
+    console.log(`currently own ${numOwnedCities} cities`);
+    console.log(`curently ${cities.length} cities visible`);
+    mainTarget = cities.find((city) => terrain[city] === TILE_EMPTY);
+    // if (typeof target === 'undefined') {
+    //   mainTarget = -1;
+    // }
   }
 
+  // when possible try to attack enemy crown
+  if (opponent !== -1 && mainTarget === -1) {
+    console.log(`main targeting enemy crown`);
+    mainTarget = opponent;
+  }
 
+  if (mainTarget !== -1) {
+    if (targetStack.length === 0 && head + 2 < armies[mainTarget]) {
+      targetStack.push(highTileStack.pop());
+    }
+    console.log(
+      `main targeting ${
+        generals.indexOf(mainTarget) >= 0 ? 'general' : 'city'
+      } ${mainTarget} (costs ${armies[mainTarget]} troops)`
+    );
+  }
 
+  let target = -1;
   const targetRow = Math.floor(target / width);
   const targetCol = target % width;
-
-  if (target !== -1) {
-    bestEndIndex =
-      moves.map(move => index + move).reduce((min, endIndex) => {
-        const row = Math.floor(endIndex / width);
-        const col = endIndex % width;
-        let distToOp = Math.abs(row - targetRow) + Math.abs(col - targetCol);
-        // console.log(`dist to target: ${distToOp}`);
-        if (terrain[ endIndex ] === TILE_MOUNTAIN) {
-          distToOp = Number.MAX_SAFE_INTEGER;
-        }
-        if (currPath[ endIndex ] > 0) {
-          distToOp += size;
-        }
-        if (distToOp < min.distToOp) {
-          return { 'endIndex': endIndex, 'distToOp': distToOp };
-        } else {
-          return min;
-        }
-      }, { 'distToOp': Number.MAX_SAFE_INTEGER })
-        .endIndex;
-  }
-
-  if (target !== -1 && bestEndIndex === target) {
-    // if (!(cities.indexOf(target) >= 0 && terrain[ target ] !== playerIndex)) {
-    //   target = -1;
-    // console.log(`targeting finished`);
-    // console.log('\n');
-    // }
-    target = -1;
-  }
-
-  if (currPath[ bestEndIndex ]) {
-    currPath[ bestEndIndex ]++;
+  if (targetStack.length > 0) {
+    // calculate target tile
+    target = targetStack[targetStack.length - 1];
+    console.log(`targeting tile ${target} (contains ${armies[target]} troops)`);
   } else {
-    currPath[ bestEndIndex ] = 1;
+    target = mainTarget;
   }
-  weightMap[ bestEndIndex ]++;
+
+  // go toward a specific target if specified
+  if (target !== -1) {
+    const bestDist = moves
+      .map((move) => index + move)
+      .reduce(
+        (min, endIndex) => {
+          const row = Math.floor(endIndex / width);
+          const col = endIndex % width;
+          let distToTarget =
+            Math.abs(row - targetRow) + Math.abs(col - targetCol);
+          if (currPath[endIndex] > 0) {
+            distToTarget += size * currPath[endIndex];
+          }
+          if (terrain[endIndex] === TILE_MOUNTAIN) {
+            distToTarget = Number.MAX_SAFE_INTEGER;
+          }
+          if (distToTarget < min.distToTarget) {
+            return { endIndex: endIndex, distToTarget: distToTarget };
+          } else {
+            return min;
+          }
+        },
+        { distToTarget: Number.MAX_SAFE_INTEGER }
+      );
+    bestEndIndex = bestDist.endIndex;
+    console.log(`${bestDist.distToTarget} units away from target`);
+  }
+
+  if (target === bestEndIndex) {
+    targetStack.pop();
+    console.log('targeting finished');
+  }
+
+  if (mainTarget === bestEndIndex) {
+    mainTarget = -1;
+    console.log('main targeting finished');
+  }
+
+  if (currPath[bestEndIndex]) {
+    currPath[bestEndIndex]++;
+  } else {
+    currPath[bestEndIndex] = 1;
+  }
+  weightMap[bestEndIndex]++;
+  // console.log('attacking from ', index, ' to ', bestEndIndex)
   socket.emit('attack', index, bestEndIndex);
   index = bestEndIndex;
-  moves = [];
+  console.log();
 });
 
 leaveGame = () => {
