@@ -44,7 +44,7 @@ let cities = [];
 let map = [];
 let index = -1;
 let currPath = [];
-let weightMap = [];
+// let weightMap = [];
 let moves;
 let flip = false;
 let resetHead = false;
@@ -104,8 +104,10 @@ socket.on('game_update', (data) => {
   // initialize index
   if (index === -1) {
     index = crown;
-    weightMap[crown] = 0;
+    // weightMap[crown] = 0;
   }
+
+  let head = armies[index];
 
   // update game state
   const turn = data.turn;
@@ -115,9 +117,12 @@ socket.on('game_update', (data) => {
     .map((t) => t.index);
   const myCities = cities.filter((c) => terrain[c] === playerIndex);
   const highTileStack = myArmy.sort((a, b) => armies[a] - armies[b]).slice();
+  const avgTroopSize =
+    Math.floor(
+      myArmy.reduce((sum, t) => sum + armies[t.index]),
+      0
+    ) / numTroops;
 
-  const row = Math.floor(index / width);
-  const col = index % width;
   const numTroops = myArmy.length;
   const avgRow = Math.floor(
     myArmy.reduce((sum, t) => sum + Math.floor(t.index / width), 0) / numTroops
@@ -127,15 +132,14 @@ socket.on('game_update', (data) => {
   );
   const center = avgRow * width + avgCol; // based on center of army
 
-  // underweight paths to opponent
+  // get opponent location
   const opponent = generals.find((g) => g !== crown);
-
   const opRow = Math.floor(opponent / width);
   const opCol = opponent % width;
 
   // reset head if head goes to one
   resetHead = false;
-  if (armies[index] <= 1 || terrain[index] !== playerIndex) {
+  if (head < avgTroopSize || terrain[index] !== playerIndex) {
     resetHead = true;
   }
 
@@ -144,22 +148,24 @@ socket.on('game_update', (data) => {
     index = highTileStack.pop();
     currPath = [];
     currPath[index] = 1;
-    weightMap[index]++;
+    // weightMap[index]++;
   }
 
-  const head = armies[index];
+  head = armies[index];
+  const row = Math.floor(index / width);
+  const col = index % width;
 
   console.log(`head at ${index} with ${head} troops`);
 
   // give mountains infinite weight
   // underweight blank tiles
-  terrain.map((t, i) => {
-    if (t === TILE_MOUNTAIN) {
-      weightMap[i] = Number.MAX_SAFE_INTEGER;
-    } else if (t === TILE_EMPTY || t === TILE_FOG) {
-      weightMap[i] = -1;
-    }
-  });
+  // terrain.map((t, i) => {
+  //   if (t === TILE_MOUNTAIN) {
+  //     weightMap[i] = Number.MAX_SAFE_INTEGER;
+  //   } else if (t === TILE_EMPTY || t === TILE_FOG) {
+  //     weightMap[i] = -1;
+  //   }
+  // });
 
   // adjust move vector based on center quadrant
   const up = avgRow < Math.floor(height / 2);
@@ -213,59 +219,60 @@ socket.on('game_update', (data) => {
   let bestEndIndex = moves
     .map((move) => {
       let endIndex = index + move;
-      let extraWeight = 0;
+      let weight = 0;
 
       // add weight to previous squares in path
       if (currPath[endIndex] > 0) {
-        extraWeight = size * currPath[endIndex];
+        weight += size * currPath[endIndex];
       }
 
       // if possible try to capture a city
       // add weight to cities
       if (cities.indexOf(endIndex) >= 0) {
         if (armies[index] > armies[endIndex] + 1) {
-          extraWeight += -1;
+          weight -= -1;
         } else {
-          extraWeight += size;
+          weight += size;
         }
       }
 
       // underweight reasonably high tiles
-      const avgTroops =
-        Math.floor(
-          myArmy.reduce((sum, t) => sum + armies[t.index]),
-          0
-        ) / numTroops;
       if (
-        armies[endIndex] > 1 &&
         terrain[endIndex] === playerIndex &&
-        armies[index] < avgTroops
+        armies[endIndex] > 1 &&
+        armies[index] < avgTroopSize
       ) {
-        extraWeight -= armies[endIndex];
+        weight -= armies[endIndex];
       }
 
       // underweight low enemy tiles
       if (myArmy.indexOf(endIndex) === -1) {
         // after turn 200, try to attack enemy territory at all costs
         if (turn > 200) {
-          extraWeight -= size;
+          weight -= size;
         } else {
-          extraWeight += armies[endIndex];
+          weight += armies[endIndex];
         }
       }
 
-      return { endIndex: endIndex, weight: weightMap[endIndex] + extraWeight };
+      const distToCenter = Math.abs(row - avgRow) + Math.abs(col - avgCol);
+      weight -= distToCenter;
+
+      return {
+        endIndex: endIndex,
+        weight: /*weightMap[endIndex] +*/ weight,
+      };
     })
     .reduce(
       (min, move) => {
         // console.log(move.weight);
-
         return move.weight < min.weight ? move : min;
       },
       { weight: Number.MAX_SAFE_INTEGER }
     ).endIndex;
 
   // console.log('\n');
+  console.log(`bestEndIndex is ${bestEndIndex}`);
 
   // target cities
   const numOwnedCities = myCities.length;
@@ -294,10 +301,11 @@ socket.on('game_update', (data) => {
   if (mainTarget !== -1) {
     if (targetStack.length === 0 && head + 2 < armies[mainTarget]) {
       targetStack.push(highTileStack.pop());
+      console.log(`head not large enough for main target`);
     }
     console.log(
       `main targeting ${
-        generals.indexOf(mainTarget) >= 0 ? 'general' : 'city'
+        generals.indexOf(mainTarget) >= 0 ? 'enemy crown' : 'city'
       } ${mainTarget} (costs ${armies[mainTarget]} troops)`
     );
   }
@@ -313,8 +321,10 @@ socket.on('game_update', (data) => {
     target = mainTarget;
   }
 
+  console.log();
   // go toward a specific target if specified
   if (target !== -1) {
+    console.log(`target weights:`);
     const bestDist = moves
       .map((move) => index + move)
       .reduce(
@@ -323,6 +333,7 @@ socket.on('game_update', (data) => {
           const col = endIndex % width;
           let distToTarget =
             Math.abs(row - targetRow) + Math.abs(col - targetCol);
+          console.log(distToTarget);
           if (currPath[endIndex] > 0) {
             distToTarget += size * currPath[endIndex];
           }
@@ -356,7 +367,7 @@ socket.on('game_update', (data) => {
   } else {
     currPath[bestEndIndex] = 1;
   }
-  weightMap[bestEndIndex]++;
+  // weightMap[bestEndIndex]++;
   // console.log('attacking from ', index, ' to ', bestEndIndex)
   socket.emit('attack', index, bestEndIndex);
   index = bestEndIndex;
