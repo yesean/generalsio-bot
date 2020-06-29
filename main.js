@@ -13,7 +13,7 @@ const user_id = 'seans_bot';
 const username = '[Bot] seans_bot';
 
 // join custom game
-const custom_game_id = 'benisman';
+const custom_game_id = 'benis';
 
 socket.on('disconnect', () => {
   console.error('Disconnected from server.');
@@ -108,6 +108,18 @@ socket.on('game_update', (data) => {
 
   let head = armies[index];
 
+  // filter out unreachable cities
+  reachableTile = (tile) => {
+    return (
+      terrain[tile - 1] >= TILE_EMPTY ||
+      terrain[tile + 1] >= TILE_EMPTY ||
+      terrain[tile - width] >= TILE_EMPTY ||
+      terrain[tile + width] >= TILE_EMPTY ||
+      terrain[tile] >= 0
+    );
+  };
+  cities = cities.filter((c) => reachableTile(c));
+
   // update game state
   const turn = data.turn;
   console.log(`at turn ${turn}`);
@@ -145,7 +157,7 @@ socket.on('game_update', (data) => {
   if (mainTarget !== -1 && terrain[mainTarget] === playerIndex) {
     mainTarget = -1;
     mainTargetTurnDuration = 0;
-    resetHead = true;
+    currPath = [];
     console.log('main targeting finished');
   }
 
@@ -285,10 +297,10 @@ socket.on('game_update', (data) => {
       }
 
       // underweight low enemy tiles
-      if (myArmy.indexOf(endIndex) === -1) {
+      if (terrain[endIndex] !== playerIndex && terrain[endIndex] >= 0) {
         // after turn 200, underweight enemy tiles
         if (turn > 200) {
-          weight -= size;
+          weight -= size / armies[endIndex];
         } else {
           weight += armies[endIndex];
         }
@@ -299,7 +311,7 @@ socket.on('game_update', (data) => {
 
       return {
         endIndex: endIndex,
-        weight: /*weightMap[endIndex] +*/ weight,
+        weight: weight,
       };
     })
     .reduce(
@@ -320,35 +332,39 @@ socket.on('game_update', (data) => {
     Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
     Math.abs((e % width) - (s % width));
 
+  // when possible try to attack enemy crown
+  if (opponent !== -1 && mainTarget === -1 && turn > 500) {
+    console.log(`reseting for op crown`);
+    currPath = [];
+    mainTarget = opponent;
+  }
+
   // target cities
   const numOwnedCities = myCities.length;
   if (
     mainTarget === -1 &&
     turn % 10 === 0 &&
-    numOwnedCities < Math.floor(turn / 100) &&
+    numOwnedCities < Math.floor(turn / 75) &&
     cities.length > numOwnedCities
   ) {
+    currPath = [];
+    console.log(`resetting for cities`);
     mainTarget = cities
       .filter((c) => terrain[c] !== playerIndex && c !== -1)
-      .reduce((min, c) => (mDist(crown, c) < mDist(crown, min) ? c : min));
-  }
-
-  // when possible try to attack enemy crown
-  if (opponent !== -1 && mainTarget === -1) {
-    mainTarget = opponent;
+      .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
   }
 
   // try to target enemy territory
-  if (
-    turn > 250 &&
-    mainTarget === -1 &&
-    typeof terrain.find((t) => t !== playerIndex && t >= 0) !== 'undefined'
-  ) {
-    mainTarget = terrain
-      .map((t, i) => ({ t: t, i: i }))
-      .filter((t) => t.t !== playerIndex && t.t >= 0)
-      .map((t) => t.i)
-      .reduce((min, t) => (mDist(crown, t) < mDist(crown, min) ? t : min));
+  const enemyTerritory = terrain
+    .map((t, i) => ({ t: t, i: i }))
+    .filter((t) => t.t !== playerIndex && t.t >= 0 && reachableTile(t.i));
+  if (turn > 500 && mainTarget === -1 && enemyTerritory.length > 0) {
+    console.log(`resetting for enemy territory`);
+    currPath = [];
+    mainTarget = enemyTerritory.reduce(
+      (min, t) => (eDist(crown, t.i) < eDist(crown, min.i) ? t : min),
+      { i: size * size }
+    ).i;
   }
 
   // stop nearby enemies
@@ -386,6 +402,8 @@ socket.on('game_update', (data) => {
         nextTarget = highTileStack.pop();
       } while (nextTarget === index);
       helperTarget = nextTarget;
+      currPath = [];
+      console.log(`resetting for helper`);
 
       console.log(
         `main target too large (requires ${
@@ -424,6 +442,27 @@ socket.on('game_update', (data) => {
           if (helperTarget !== -1 && endIndex === mainTarget) {
             weight += size * size;
           }
+
+          // if (terrain[endIndex] === playerIndex && armies[endIndex] > 1) {
+          //   weight -= armies[endIndex];
+          // }
+
+          if (terrain[endIndex] === TILE_EMPTY) {
+            if (cities.indexOf(endIndex) >= 0) {
+              if (head > armies[endIndex] + 2) {
+                weight -= avgTroopSize;
+              } else {
+                weight += avgTroopSize;
+              }
+            } else {
+              weight -= avgTroopSize + distToTarget;
+            }
+          }
+
+          if (endIndex === target) {
+            weight -= size * size;
+          }
+
           console.log(
             `direction: ${endIndex - index} weight: ${weight} freq: ${
               currPath[endIndex]
