@@ -333,7 +333,7 @@ socket.on('game_update', (data) => {
     Math.abs((e % width) - (s % width));
 
   // when possible try to attack enemy crown
-  if (opponent !== -1 && mainTarget === -1 && turn > 500) {
+  if (opponent !== -1 && mainTarget === -1) {
     console.log(`reseting for op crown`);
     currPath = [];
     mainTarget = opponent;
@@ -358,9 +358,9 @@ socket.on('game_update', (data) => {
   const enemyTerritory = terrain
     .map((t, i) => ({ t: t, i: i }))
     .filter((t) => t.t !== playerIndex && t.t >= 0 && reachableTile(t.i));
-  if (turn > 500 && mainTarget === -1 && enemyTerritory.length > 0) {
+  if (turn > 250 && mainTarget === -1 && enemyTerritory.length > 0) {
     console.log(`resetting for enemy territory`);
-    currPath = [];
+    // currPath = [];
     mainTarget = enemyTerritory.reduce(
       (min, t) => (eDist(crown, t.i) < eDist(crown, min.i) ? t : min),
       { i: size * size }
