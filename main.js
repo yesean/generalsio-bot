@@ -13,7 +13,7 @@ const user_id = 'seans_bot';
 const username = '[Bot] seans_bot';
 
 // join custom game
-const custom_game_id = 'benis';
+const custom_game_id = 'benisman';
 
 socket.on('disconnect', () => {
   console.error('Disconnected from server.');
@@ -171,16 +171,25 @@ socket.on('game_update', (data) => {
 
   // get location of a viable opponent
   let opponent = generals.find(
-    (g, i) =>
-      i !== playerIndex &&
-      data.scores.find((s) => s.i === i).total + 100 < numTroops
+    (g, i) => i !== playerIndex //&&
+    // data.scores.find((s) => s.i === i).total + 100 < numTroops
   );
   const opRow = Math.floor(opponent / width);
   const opCol = opponent % width;
+  let opponentSize;
   if (typeof opponent === 'undefined') {
     opponent = -1;
+  } else {
+    opponentSize = data.scores.find((s) => s.i !== playerIndex).total;
   }
 
+  console.log(`head: ${head}`);
+  console.log(`avg troop size: ${avgTroopSize}`);
+  console.log(`index: ${index}`);
+  console.log(`terrain[index]: ${terrain[index]}`);
+  console.log(`playerindex: ${playerIndex}`);
+  console.log(`head < avgtroop: ${head < avgTroopSize}`);
+  console.log(`terr[ind] !== playerindex: ${terrain[index] !== playerIndex}`);
   if (head < avgTroopSize || terrain[index] !== playerIndex) {
     resetHead = true;
   }
@@ -192,6 +201,7 @@ socket.on('game_update', (data) => {
       nextHead = highTileStack.pop();
     } while (nextHead === helperTarget);
     index = nextHead;
+    console.log('resetting head');
     currPath = [];
     currPath[index] = 1;
     head = armies[index];
@@ -344,7 +354,7 @@ socket.on('game_update', (data) => {
   if (
     mainTarget === -1 &&
     turn % 10 === 0 &&
-    numOwnedCities < Math.floor(turn / 75) &&
+    numOwnedCities < Math.floor(turn / 125) &&
     cities.length > numOwnedCities
   ) {
     currPath = [];
@@ -358,18 +368,22 @@ socket.on('game_update', (data) => {
   const enemyTerritory = terrain
     .map((t, i) => ({ t: t, i: i }))
     .filter((t) => t.t !== playerIndex && t.t >= 0 && reachableTile(t.i));
-  if (turn > 250 && mainTarget === -1 && enemyTerritory.length > 0) {
+  if (
+    mainTarget === -1 &&
+    enemyTerritory.length > 0 &&
+    numTroops > opponentSize
+  ) {
     console.log(`resetting for enemy territory`);
-    // currPath = [];
+    currPath = [];
     mainTarget = enemyTerritory.reduce(
-      (min, t) => (eDist(crown, t.i) < eDist(crown, min.i) ? t : min),
+      (min, t) => (eDist(index, t.i) < eDist(index, min.i) ? t : min),
       { i: size * size }
     ).i;
   }
 
   // stop nearby enemies
   const closeEnemy = terrain.findIndex(
-    (t, i) => t !== playerIndex && t >= 0 && eDist(crown, i) < 5
+    (t, i) => t !== playerIndex && t >= 0 && eDist(crown, i) < 10
   );
   if (closeEnemy !== -1) {
     mainTarget = closeEnemy;
@@ -487,6 +501,7 @@ socket.on('game_update', (data) => {
   }
   socket.emit('attack', index, bestEndIndex);
   index = bestEndIndex;
+  console.log(`going to index ${index}`);
   console.log();
 });
 
