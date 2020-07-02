@@ -354,14 +354,69 @@ socket.on('game_update', (data) => {
     Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
     Math.abs((e % width) - (s % width));
 
-  // when possible try to attack enemy crown
-  if (foundGenerals.length > 0 && mainTarget !== foundGenerals[0]) {
-    console.log(`resetting for op crown`);
+  // always stop nearby enemies
+  const closeEnemy = terrain.reduce((closest, t, i) => {
+    if (t !== playerIndex && t >= 0 && eDist(crown, i) < 10) {
+      if (closest === -1) {
+        return i;
+      } else {
+        return eDist(crown, i) < eDist(crown, closest) ? i : closest;
+      }
+    } else {
+      return closest;
+    }
+  }, -1);
+  if (closeEnemy !== -1 && mainTarget !== closeEnemy) {
+    targetingEnemyTerritory = false;
     currPath = [];
-    mainTarget = foundGenerals[0];
+    console.log(`stopping close enemies at index ${closeEnemy}`);
+    mainTarget = closeEnemy;
   }
 
-  // target cities
+  // if possible try to attack enemy crown
+  if (mainTarget === -1) {
+    if (closeEnemy === -1 && foundGenerals.length > 0) {
+      console.log(`resetting for op crown`);
+      currPath = [];
+      mainTarget = foundGenerals[0];
+    }
+  }
+
+  // if possible try to target enemy territory
+  let targetingEnemyTerritory = false;
+  if (mainTarget === -1) {
+    const enemyTerritory = terrain.reduce((closest, tile, i) => {
+      if (
+        closeEnemy === -1 &&
+        foundGenerals.length === 0 &&
+        tile !== playerIndex &&
+        tile >= 0 &&
+        reachableTile(i)
+      ) {
+        if (closest === -1) {
+          return i;
+        } else {
+          return eDist(index, i) < eDist(index, closest) ? i : closest;
+        }
+      } else {
+        return closest;
+      }
+    }, -1);
+    if (enemyTerritory !== -1) {
+      console.log(`resetting for enemy territory`);
+      targetingEnemyTerritory = true;
+      currPath = [];
+      mainTarget = enemyTerritory;
+      console.log(
+        `enemy territory is ${eDist(
+          index,
+          enemyTerritory
+        )} units away from index`
+      );
+    }
+  }
+
+  // if possible target cities
   const numOwnedCities = myCities.length;
   if (
     mainTarget === -1 &&
@@ -376,44 +431,6 @@ socket.on('game_update', (data) => {
       .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
   }
 
-  // try to target enemy territory
-  let targetingEnemyTerritory = false;
-  const enemyTerritory = terrain.reduce((min, tile, i) => {
-    if (tile !== playerIndex && tile >= 0 && reachableTile(i)) {
-      if (min === -1) {
-        return i;
-      } else {
-        return eDist(index, i) < eDist(index, min) ? i : min;
-      }
-    } else {
-      return min;
-    }
-  }, -1);
-  if (enemyTerritory !== -1 && mainTarget === -1) {
-    console.log(`resetting for enemy territory`);
-    targetingEnemyTerritory = true;
-    currPath = [];
-    mainTarget = enemyTerritory;
-  }
-
-  // stop nearby enemies
-  const closeEnemy = terrain.reduce((closest, t, i) => {
-    if (t !== playerIndex && t >= 0 && eDist(crown, i) < 10) {
-      if (closest === -1) {
-        return i;
-      } else {
-        return eDist(crown, i) < eDist(crown, closest) ? i : closest;
-      }
-    } else {
-      return closest;
-    }
-  }, -1);
-  if (closeEnemy !== -1 && mainTarget !== closeEnemy) {
-    targetingEnemyTerritory = false;
-    console.log(`stopping close enemies`);
-    mainTarget = closeEnemy;
-  }
-
   // const opponentDist = Math.abs(opponent - index);
   // if (
   //   (opponentDist === 1 || opponentDist === width) &&
@@ -423,10 +440,10 @@ socket.on('game_update', (data) => {
   // }
 
   // if target cannot be seen anymore, abandon
-  if (armies[mainTarget] < 0) {
-    mainTarget = -1;
-    targetingEnemyTerritory = false;
-  }
+  // if (armies[mainTarget] < 0) {
+  //   mainTarget = -1;
+  //   targetingEnemyTerritory = false;
+  // }
 
   let buffer = 2;
   if (targetingEnemyTerritory && eDist(index, mainTarget) > 10) {
