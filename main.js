@@ -54,6 +54,29 @@ let mainTarget = -1;
 let mainTargetTurnDuration = 0;
 let head;
 let foundGenerals = [];
+let terrain;
+let width, height;
+
+// filter out unreachable cities
+reachableTile = (tile) => {
+  return (
+    terrain[tile - 1] >= TILE_EMPTY ||
+    terrain[tile + 1] >= TILE_EMPTY ||
+    terrain[tile - width] >= TILE_EMPTY ||
+    terrain[tile + width] >= TILE_EMPTY ||
+    terrain[tile] >= 0
+  );
+};
+
+eDist = (s, e) =>
+  Math.sqrt(
+    Math.pow(Math.floor(e / width) - Math.floor(s / width), 2) +
+      Math.pow((e % width) - (s % width), 2)
+  );
+
+mDist = (s, e) =>
+  Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
+  Math.abs((e % width) - (s % width));
 
 patch = (old, diff) => {
   let out = [];
@@ -92,15 +115,15 @@ socket.on('game_update', (data) => {
   generals = data.generals;
 
   // map dimensions
-  const width = map[0];
-  const height = map[1];
+  width = map[0];
+  height = map[1];
   const size = width * height;
 
   // update army values
   const armies = map.slice(2, size + 2);
 
   // update terrain values
-  const terrain = map.slice(size + 2, size + 2 + size);
+  terrain = map.slice(size + 2, size + 2 + size);
 
   // set crown location
   const crown = generals[playerIndex];
@@ -113,23 +136,15 @@ socket.on('game_update', (data) => {
 
   head = armies[index];
 
-  // filter out unreachable cities
-  reachableTile = (tile) => {
-    return (
-      terrain[tile - 1] >= TILE_EMPTY ||
-      terrain[tile + 1] >= TILE_EMPTY ||
-      terrain[tile - width] >= TILE_EMPTY ||
-      terrain[tile + width] >= TILE_EMPTY ||
-      terrain[tile] >= 0
-    );
-  };
   cities = cities.filter((c) => reachableTile(c));
 
   // update game state
-  const myArmy = terrain
-    .map((t, i) => ({ tile: t, index: i }))
-    .filter((t) => t.tile === playerIndex)
-    .map((t) => t.index);
+  const myArmy = terrain.reduce((army, t, i) => {
+    if (t === playerIndex) {
+      army.push(i);
+    }
+    return army;
+  }, []);
   const myCities = cities.filter((c) => terrain[c] === playerIndex);
   const numTroops = data.scores.find((s) => s.i === playerIndex).total;
   const numTiles = myArmy.length;
@@ -201,7 +216,9 @@ socket.on('game_update', (data) => {
   console.log(`terrain[index]: ${terrain[index]}`);
   console.log(`playerindex: ${playerIndex}`);
   console.log(`head < avgtroop: ${head < avgTroopSize}`);
-  console.log(`terr[ind] !== playerindex: ${terrain[index] !== playerIndex}`);
+  console.log(
+    `terrain[index] !== playerindex: ${terrain[index] !== playerIndex}`
+  );
   if (head < avgTroopSize || terrain[index] !== playerIndex) {
     resetHead = true;
   }
@@ -211,12 +228,13 @@ socket.on('game_update', (data) => {
     let nextHead;
     do {
       nextHead = highTileStack.pop();
-    } while (nextHead === helperTarget);
+    } while (nextHead === helperTarget || nextHead === index);
     index = nextHead;
     currPath = [];
     currPath[index] = 1;
     head = armies[index];
     console.log(`resetting head to ${head}`);
+    resetHead = false;
   }
 
   const row = Math.floor(index / width);
@@ -344,19 +362,12 @@ socket.on('game_update', (data) => {
     );
   bestEndIndex = bestMove.endIndex;
 
-  eDist = (s, e) =>
-    Math.sqrt(
-      Math.pow(Math.floor(e / width) - Math.floor(s / width), 2) +
-        Math.pow((e % width) - (s % width), 2)
-    );
-
-  mDist = (s, e) =>
-    Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
-    Math.abs((e % width) - (s % width));
+  // used to determine the number troops needed for takeover
+  let targetingEnemyTerritory = false;
 
   // always stop nearby enemies
   const closeEnemy = terrain.reduce((closest, t, i) => {
-    if (t !== playerIndex && t >= 0 && eDist(crown, i) < 10) {
+    if (t !== playerIndex && t >= 0 && eDist(crown, i) < 5) {
       if (closest === -1) {
         return i;
       } else {
@@ -367,7 +378,6 @@ socket.on('game_update', (data) => {
     }
   }, -1);
   if (closeEnemy !== -1 && mainTarget !== closeEnemy) {
-    targetingEnemyTerritory = false;
     currPath = [];
     console.log(`stopping close enemies at index ${closeEnemy}`);
     mainTarget = closeEnemy;
@@ -383,7 +393,6 @@ socket.on('game_update', (data) => {
   }
 
   // if possible try to target enemy territory
-  let targetingEnemyTerritory = false;
   if (mainTarget === -1) {
     const enemyTerritory = terrain.reduce((closest, tile, i) => {
       if (
@@ -417,27 +426,33 @@ socket.on('game_update', (data) => {
   }
 
   // if possible target cities
-  const numOwnedCities = myCities.length;
-  if (
-    mainTarget === -1 &&
-    turn % 10 === 0 &&
-    numOwnedCities < Math.floor(turn / 75) &&
-    cities.length > numOwnedCities
-  ) {
-    currPath = [];
-    console.log(`resetting for cities`);
-    mainTarget = cities
-      .filter((c) => terrain[c] !== playerIndex && c !== -1)
-      .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
+  if (mainTarget === -1) {
+    const numOwnedCities = myCities.length;
+    if (
+      turn % 10 === 0 &&
+      numOwnedCities < Math.floor(turn / 75) &&
+      cities.length > numOwnedCities
+    ) {
+      currPath = [];
+      console.log(`resetting for cities`);
+      mainTarget = cities
+        .filter((c) => terrain[c] !== playerIndex && c !== -1)
+        .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
+    }
   }
 
-  // const opponentDist = Math.abs(opponent - index);
-  // if (
-  //   (opponentDist === 1 || opponentDist === width) &&
-  //   head > armies[opponent] + 2
-  // ) {
-  //   mainTarget = opponent;
-  // }
+  // if head is too small and far away, reset head
+  if (
+    mainTarget !== -1 &&
+    head < armies[mainTarget] + 2 &&
+    eDist(index, mainTarget) < 2 &&
+    eDist(crown, index) > 10
+  ) {
+    resetHead = true;
+    console.log(`main target too large, resetting head`);
+    console.log();
+    return;
+  }
 
   // if target cannot be seen anymore, abandon
   // if (armies[mainTarget] < 0) {
@@ -446,8 +461,8 @@ socket.on('game_update', (data) => {
   // }
 
   let buffer = 2;
-  if (targetingEnemyTerritory && eDist(index, mainTarget) > 10) {
-    buffer = 5 * armies[mainTarget];
+  if (targetingEnemyTerritory && eDist(index, mainTarget) > 1) {
+    buffer = 10 * armies[mainTarget];
   }
 
   // if main target is set, target high tiles if head isn't enough
@@ -466,12 +481,15 @@ socket.on('game_update', (data) => {
     );
     console.log(`head has ${head} troops`);
     if (helperTarget === -1 && head < armies[mainTarget] + buffer) {
-      let nextTarget;
-      console.log(highTileStack.map((t) => armies[t]).join());
-      do {
-        nextTarget = highTileStack.pop();
-      } while (nextTarget === index);
-      helperTarget = nextTarget;
+      helperTarget = myArmy.reduce((best, i) => {
+        if (armies[i] <= 1 || i === index) {
+          return best;
+        } else {
+          const iValue = (2 * armies[i]) / eDist(index, i);
+          const bValue = (2 * armies[best]) / eDist(index, best);
+          return iValue > bValue ? i : best;
+        }
+      });
       currPath = [];
       console.log(`resetting for helper`);
 
@@ -517,7 +535,7 @@ socket.on('game_update', (data) => {
           if (terrain[endIndex] === playerIndex) {
             weight -= armies[endIndex] / (semiPerimeter - distToTarget);
           } else {
-            weight += armies[endIndex] / (semiPerimeter - distToTarget);
+            weight += armies[endIndex];
           }
 
           // if (terrain[endIndex] === playerIndex && armies[endIndex] > 1) {
@@ -567,7 +585,6 @@ socket.on('game_update', (data) => {
   socket.emit('attack', index, bestEndIndex);
   console.log(`going to index ${bestEndIndex}`);
   index = bestEndIndex;
-  resetHead = false;
   console.log();
 });
 
