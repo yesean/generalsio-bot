@@ -15,8 +15,16 @@ const username = process.env.USERNAME;
 const custom_game_id = process.env.GAME_ID;
 
 socket.on('disconnect', () => {
-  console.error('Disconnected from server.');
-  process.exit(1);
+  // console.error('Disconnected from server.');
+  // process.exit(1);
+  socket.connect();
+  setInterval(() => {
+    socket.emit('join_private', custom_game_id, user_id);
+    socket.emit('set_force_start', custom_game_id, true);
+    setTimeout(() => {}, 3000);
+    socket.emit('cancel');
+    console.log('emitted cancel');
+  }, 3000);
 });
 
 socket.on('connect', () => {
@@ -28,6 +36,9 @@ socket.on('connect', () => {
       custom_game_id
     )}`
   );
+  setInterval(() => {
+    socket.emit('set_force_start', custom_game_id, true);
+  }, 1000);
 });
 
 // game data
