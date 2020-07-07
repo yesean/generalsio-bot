@@ -5,7 +5,7 @@ const TILE_FOG = -3;
 const TILE_FOG_OBSTACLE = -4;
 
 const getNextIndex = (
-  { headIndex, headSize, currPath },
+  { headIndex, headSize, currPath, eDist },
   {
     playerIndex,
     width,
@@ -14,18 +14,17 @@ const getNextIndex = (
     cities,
     armies,
     terrain,
-    centerIndex,
+    center,
     avgTileSize,
-  },
-  eDist
+  }
 ) => {
   // calculate head coordinates
   const row = Math.floor(headIndex / width);
   const col = headIndex % width;
 
   // order moves based on center of army
-  const up = centerIndex[0] < Math.floor(height / 2);
-  const left = centerIndex[1] < Math.floor(width / 2);
+  const up = center.row < Math.floor(height / 2);
+  const left = center.col < Math.floor(width / 2);
   let vMoves = up ? [width, -width] : [-width, width];
   let hMoves = left ? [1, -1] : [-1, 1];
   let moves;
@@ -91,14 +90,19 @@ const getNextIndex = (
       weight -= armies[index];
     }
 
-    const distToCenter = eDist(index, centerIndex);
-    weight -= distToCenter;
+    // // add weight to tiles away from center of army
+    // const centerIndex = center.row * width + center.col;
+    // const distToCenter = eDist(index, centerIndex, width);
+    // weight -= distToCenter;
     return weight;
   };
 
   return moves
     .map((m) => headIndex + m)
     .reduce((bestNextIndex, nextIndex) => {
+      console.log(
+        `moveIndex: ${nextIndex}, moveWeight: ${calcWeight(nextIndex)}`
+      );
       const moveWeight = calcWeight(nextIndex);
       const currBestMoveWeight = calcWeight(bestNextIndex);
       return moveWeight < currBestMoveWeight ? nextIndex : bestNextIndex;

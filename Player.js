@@ -10,225 +10,117 @@ const TILE_FOG_OBSTACLE = -4;
 
 class Player {
   constructor(socket, playerIndex) {
-    this.playerIndex = playerIndex;
-    this.game = new GameState();
-    this.target = -1;
-    this.targetPath = [];
-    this.currPath = new Map();
-    this.headIndex = -1;
-    this.this.headSize = 0;
-    this.resetHead = false;
     this.socket = socket;
+    this.playerIndex = playerIndex;
+    this.game = new GameState(this.playerIndex);
+    this.target = new Target();
+    this.headIndex = -1;
+    this.headSize = 0;
+    this.currPath = new Map();
   }
+
+  // euclidean distance
+  eDist(start, end, width) {
+    return Math.sqrt(
+      Math.pow(Math.floor(end / width) - Math.floor(start / width), 2) +
+        Math.pow((end % width) - (start % width), 2)
+    );
+  }
+
+  // manhattan distance
+  mDist(start, end, width) {
+    return (
+      Math.abs(Math.floor(end / width) - Math.floor(start / width)) +
+      Math.abs((end % width) - (start % width))
+    );
+  }
+
+  // check if tile can be currently reachable
+  reachableTile(tile, width) {
+    return (
+      terrain[tile - 1] >= TILE_EMPTY ||
+      terrain[tile + 1] >= TILE_EMPTY ||
+      terrain[tile - width] >= TILE_EMPTY ||
+      terrain[tile + width] >= TILE_EMPTY ||
+      terrain[tile] >= 0
+    );
+  }
+
+  resetHead = () => {
+    this.headIndex = this.game.terrain.reduce((max, tile, index) => {
+      if (tile === this.playerIndex && index !== this.headIndex) {
+        if (max === -1) {
+          return index;
+        } else {
+          return this.game.armies[index] > this.game.armies[max] ? index : max;
+        }
+      } else {
+        return max;
+      }
+    }, -1);
+    this.headSize = this.game.armies[this.headIndex];
+    this.currPath.clear();
+    this.currPath.set(this.headIndex, 1);
+    console.log(
+      `resetting to headIndex ${this.headIndex}, headSize ${this.headSize}`
+    );
+  };
 
   play = (data) => {
     // update game state
     this.game.update(data);
 
-    // euclidean distance
-    const eDist = (s, e) =>
-      Math.sqrt(
-        Math.pow(Math.floor(e / width) - Math.floor(s / width), 2) +
-          Math.pow((e % width) - (s % width), 2)
-      );
+    console.log(
+      `headIndex: ${this.headIndex}, headSize: ${
+        this.game.armies[this.headIndex]
+      }`
+    );
 
-    // manhattan distance
-    const mDist = (s, e) =>
-      Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
-      Math.abs((e % width) - (s % width));
-
-    // check if tile can be currently reachable
-    const reachableTile = (tile) => {
-      return (
-        terrain[tile - 1] >= TILE_EMPTY ||
-        terrain[tile + 1] >= TILE_EMPTY ||
-        terrain[tile - width] >= TILE_EMPTY ||
-        terrain[tile + width] >= TILE_EMPTY ||
-        terrain[tile] >= 0
-      );
-    };
-
+    // reset head if head becomes too small or swallowed
+    if (
+      this.game.armies[this.headIndex] < this.game.avgTileSize ||
+      this.game.terrain[this.headIndex] !== this.playerIndex
+    ) {
+      this.resetHead();
+    }
     this.headSize = this.game.armies[this.headIndex];
 
-    if (this.target !== -1 && terrain[this.target] === this.playerIndex) {
-      this.target = -1;
-      this.currPath.clear();
-      console.log(`targeting finished`);
-    }
-
-    if (
-      this.headSize < avgTileSize ||
-      terrain[this.headIndex] !== this.playerIndex
-    ) {
-      this.resetHead = true;
-    }
-
-    if (this.resetHead) {
-      this.headIndex = this.game.terrain.reduce((max, tile, index) => {
-        if (tile === this.playerIndex && index !== this.headIndex) {
-          if (max === -1) {
-            return index;
-          } else {
-            return this.game.armies[index] > this.game.armies[max]
-              ? index
-              : max;
-          }
-        }
-      }, -1);
-      this.headSize = this.game.armies[this.headIndex];
-      this.currPath.clear();
-      this.currPath.set(this.headIndex, 1);
+    // determine next index
+    let nextIndex;
+    if (this.target.hasTarget(this, this.game)) {
       console.log(
-        `resetting to headIndex ${this.headIndex}, this.headSize ${this.headSize}`
+        `targeting ${this.target.targetType} at index ${this.target.target}`
       );
-      this.resetHead = false;
-    }
-
-    let nextIndex = Spread(this, this.game, eDist);
-
-    // used to determine the number troops needed for takeover
-    let targetingEnemyTerritory = false;
-
-    // always stop nearby enemies
-    const closeEnemy = terrain.reduce((closest, t, i) => {
-      if (t !== this.playerIndex && t >= 0 && eDist(crown, i) < 7) {
-        if (closest === -1) {
-          return i;
-        } else {
-          return eDist(crown, i) < eDist(crown, closest) ? i : closest;
-        }
-      } else {
-        return closest;
-      }
-    }, -1);
-    if (closeEnemy !== -1 && this.target !== closeEnemy) {
-      this.target = closeEnemy;
-    }
-
-    // if possible try to attack enemy crown
-    if (this.target === -1) {
-      if (this.foundGenerals.length > 0) {
-        this.target = this.foundGenerals[0];
-      }
-    }
-
-    // if possible try to this.target enemy territory
-    let enemyTerritory = -1;
-    if (
-      this.target === -1 &&
-      terrain.some(
-        (t, i) => t !== this.playerIndex && t >= 0 && reachableTile(i)
-      )
-    ) {
-      enemyTerritory = terrain.reduce((closest, t, i) => {
-        if (t !== this.playerIndex && t >= 0 && reachableTile(i)) {
-          if (closest === -1) {
-            return i;
-          } else {
-            const tDist = eDist(crown, i);
-            const cDist = eDist(crown, closest);
-            return tDist < cDist ? i : closest;
-          }
-        }
-      });
-      targetingEnemyTerritory = true;
-      this.target = enemyTerritory;
-    }
-
-    // if possible this.target cities
-    if (this.target === -1) {
-      const numOwnedCities = cities.filter(
-        (c) => terrain[c] === this.playerIndex
-      ).length;
+      // reset head if head is too far and small from target
       if (
-        numOwnedCities < Math.floor(turn / 75) &&
-        this.game.cities.length > numOwnedCities &&
-        this.game.cities.some((c) => c !== -1)
+        this.eDist(this.headIndex, this.target.target, this.game.width) > 10 &&
+        this.headSize < this.game.avgTileSize
       ) {
-        this.target = this.game.cities
-          .filter((c) => terrain[c] !== this.playerIndex && c !== -1)
-          .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
+        this.resetHead();
       }
-    }
-
-    const targetRow = Math.floor(this.target / width);
-    const targetCol = this.target % width;
-    if (this.target !== -1) {
-      console.log(
-        `targeting index ${this.target}, row ${targetRow}, col ${targetCol}`
-      );
-      console.log(
-        `target is a ${
-          closeEnemy !== -1
-            ? 'close enemy'
-            : this.game.generals.indexOf(this.target) >= 0
-            ? 'crown'
-            : enemyTerritory !== -1
-            ? 'enemy territory'
-            : 'city'
-        }`
-      );
-    }
-
-    // // if head is too small and far away, reset head
-    // if (
-    //   this.target !== -1 &&
-    //   this.headSize < this.game.armies[this.target] + 2 &&
-    //   eDist(this.headIndex, this.target) < 2 &&
-    //   eDist(crown, this.headIndex) > 10
-    // ) {
-    //   this.resetHead = true;
-    //   console.log(`target too large, resetting head`);
-    //   console.log();
-    //   return;
-    // }
-
-    // set target path of target
-    if (this.target !== -1 && this.targetPath.length === 0) {
-      console.log(`determining path from ${this.headIndex} to ${this.target}`);
-      this.targetPath = Target(
-        this.headIndex,
-        this.target,
-        terrain,
-        this.game.armies,
-        this.game.cities,
-        this.playerIndex,
-        width,
-        height
-      );
-    }
-
-    // follow target path
-    if (this.target !== -1 && this.targetPath.length > 0) {
-      console.log(`using path ${this.targetPath}`);
-      nextIndex = this.targetPath.shift();
-      if (terrain[nextIndex] === TILE_MOUNTAIN) {
-        console.log(`dijkstra ran into mountain, recomputing path`);
-        this.targetPath = Target(
-          this.headIndex,
-          this.target,
-          terrain,
-          this.game.armies,
-          this.game.cities,
-          this.playerIndex,
-          width,
-          height
-        );
-        return;
-      }
-    }
-
-    if (this.currPath.has(nextIndex)) {
-      this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
+      // targeting
+      nextIndex = this.target.getNextIndex(this, this.game);
     } else {
-      this.currPath.set(nextIndex, 1);
+      console.log(`spreading`);
+      // spreading
+      nextIndex = Spread(this, this.game);
+
+      // update currpath if spreading
+      if (this.currPath.has(nextIndex)) {
+        this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
+      } else {
+        this.currPath.set(nextIndex, 1);
+      }
     }
 
+    // attack
     this.socket.emit('attack', this.headIndex, nextIndex);
+    this.headIndex = nextIndex; // update headIndex
     console.log(
-      `going to index ${nextIndex}, freq: ${this.currPath.get(nextIndex)}`
+      `going to index ${this.headIndex}, freq: ${this.currPath.get(
+        this.headIndex
+      )}`
     );
-    this.headIndex = nextIndex;
     console.log();
   };
 }

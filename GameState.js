@@ -1,3 +1,24 @@
+const { runInThisContext } = require('vm');
+
+// patch diff array into current array
+const patch = (old, diff) => {
+  let out = [];
+  let i = 0;
+  while (i < diff.length) {
+    // matching
+    if (diff[i]) {
+      out.push(...old.slice(out.length, out.length + diff[i]));
+    }
+    ++i;
+    // mismatching
+    if (i < diff.length && diff[i]) {
+      out.push(...diff.slice(i + 1, i + 1 + diff[i]));
+    }
+    i += 1 + diff[i];
+  }
+  return out;
+};
+
 class GameState {
   constructor(playerIndex) {
     this.playerIndex = playerIndex;
@@ -15,28 +36,9 @@ class GameState {
     this.terrain = [];
     this.myScore = [];
     this.numOwnedCities = 0;
-    this.centerIndex = [];
+    this.center = { row: 0, col: 0 };
     this.avgTileSize = 0;
   }
-
-  // patch diff array into current array
-  patch = (old, diff) => {
-    let out = [];
-    let i = 0;
-    while (i < diff.length) {
-      // matching
-      if (diff[i]) {
-        out.push(...old.slice(out.length, out.length + diff[i]));
-      }
-      ++i;
-      // mismatching
-      if (i < diff.length && diff[i]) {
-        out.push(...diff.slice(i + 1, i + 1 + diff[i]));
-      }
-      i += 1 + diff[i];
-    }
-    return out;
-  };
 
   // update game state
   update(data) {
@@ -52,8 +54,8 @@ class GameState {
     this.width = this.map[0];
     this.height = this.map[1];
     this.size = this.width * this.height;
-    this.armies = this.map.slice(2, size + 2);
-    this.terrain = this.map.slice(size + 2, size + 2 + size);
+    this.armies = this.map.slice(2, this.size + 2);
+    this.terrain = this.map.slice(this.size + 2, this.size + 2 + this.size);
 
     // my data
     this.myScore = this.scores.find((score) => score.i === this.playerIndex);
@@ -65,24 +67,28 @@ class GameState {
     for (const general of this.generals) {
       if (
         general !== -1 &&
-        general !== crown &&
+        general !== this.crown &&
         this.foundGenerals.indexOf(general) === -1
       ) {
         this.foundGenerals.push(general);
       }
     }
-    const avgs = this.terrain.reduce(
-      (acc, tile, index) => {
-        if (tile === this.playerIndex) {
-          const row = Math.floor(index / width);
-          const col = index % width;
-          acc[0] += row;
-          acc[1] += col;
-        }
-      },
-      [0, 0]
-    );
-    this.centerIndex = avgs.map(avg / this.myScore.tiles);
+
+    // calculate army center coordinates
+    [this.center.row, this.center.col] = this.terrain
+      .reduce(
+        (acc, tile, index) => {
+          if (tile === this.playerIndex) {
+            const row = Math.floor(index / this.width);
+            const col = index % this.width;
+            acc[0] += row;
+            acc[1] += col;
+          }
+          return acc;
+        },
+        [0, 0]
+      )
+      .map((avg) => avg / this.myScore.tiles);
     this.avgTileSize = this.myScore.total / this.myScore.tiles;
   }
 }
