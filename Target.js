@@ -8,6 +8,7 @@ class Target {
   constructor() {
     this.target = -1;
     this.targetPath = [];
+    this.targetPathSum = 0;
     this.targetType = '';
   }
 
@@ -201,6 +202,10 @@ class Target {
     if (this.targetPath.length === 0) {
       console.log(`calculating path with dijkstra's`);
       this.targetPath = dijkstra(headIndex, this.target);
+      this.targetPathSum = this.targetPath.reduce(
+        (sum, index) => sum + armies[index],
+        0
+      );
     }
 
     return this.targetPath.shift();
