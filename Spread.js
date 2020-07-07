@@ -5,32 +5,27 @@ const TILE_FOG = -3;
 const TILE_FOG_OBSTACLE = -4;
 
 const getNextIndex = (
-  playerIndex,
-  width,
-  height,
-  headIndex,
-  centerIndex,
-  avgTileSize,
-  terrain,
-  armies,
-  cities,
-  currPath,
+  { headIndex, headSize, currPath },
+  {
+    playerIndex,
+    width,
+    height,
+    size,
+    cities,
+    armies,
+    terrain,
+    centerIndex,
+    avgTileSize,
+  },
   eDist
 ) => {
-  const size = width * height;
-  const headSize = armies[headIndex];
-
   // calculate head coordinates
   const row = Math.floor(headIndex / width);
   const col = headIndex % width;
 
-  // calculate army coordinates
-  const avgRow = Math.floor(centerIndex / width);
-  const avgCol = centerIndex % width;
-
   // order moves based on center of army
-  const up = avgRow < Math.floor(height / 2);
-  const left = avgCol < Math.floor(width / 2);
+  const up = centerIndex[0] < Math.floor(height / 2);
+  const left = centerIndex[1] < Math.floor(width / 2);
   let vMoves = up ? [width, -width] : [-width, width];
   let hMoves = left ? [1, -1] : [-1, 1];
   let moves;

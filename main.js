@@ -44,9 +44,8 @@ socket.on('game_start', (data) => {
 });
 
 socket.on('game_update', (data) => {
-  console.log(`on turn ${data.turn}`)
-  player.update(data);
-  player.play();
+  console.log(`on turn ${data.turn}`);
+  player.play(data);
 });
 
 leaveGame = () => {

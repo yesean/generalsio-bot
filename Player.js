@@ -1,4 +1,4 @@
-const Game = require('./GameState');
+const GameState = require('./GameState');
 const Spread = require('./Spread');
 const Target = require('./Target');
 
@@ -11,25 +11,19 @@ const TILE_FOG_OBSTACLE = -4;
 class Player {
   constructor(socket, playerIndex) {
     this.playerIndex = playerIndex;
-    this.game = new Game();
+    this.game = new GameState();
     this.target = -1;
     this.targetPath = [];
     this.currPath = new Map();
     this.headIndex = -1;
+    this.this.headSize = 0;
     this.resetHead = false;
-    this.foundGenerals = [];
     this.socket = socket;
   }
 
-  update = (data) => {
+  play = (data) => {
+    // update game state
     this.game.update(data);
-  };
-
-  play = () => {
-    // map dimensions
-    const width = this.game.map[0];
-    const height = this.game.map[1];
-    const size = width * height;
 
     // euclidean distance
     const eDist = (s, e) =>
@@ -43,11 +37,6 @@ class Player {
       Math.abs(Math.floor(e / width) - Math.floor(s / width)) +
       Math.abs((e % width) - (s % width));
 
-    // update board state
-    const turn = this.game.turn;
-    const armies = this.game.map.slice(2, size + 2);
-    const terrain = this.game.map.slice(size + 2, size + 2 + size);
-
     // check if tile can be currently reachable
     const reachableTile = (tile) => {
       return (
@@ -59,43 +48,7 @@ class Player {
       );
     };
 
-    const crown = this.game.generals[this.playerIndex];
-    for (const g of this.game.generals) {
-      if (g !== -1 && g !== crown && this.foundGenerals.indexOf(g) === -1) {
-        this.foundGenerals.push(g);
-      }
-    }
-
-    // update cities
-    const myCities = this.game.cities.filter(
-      (c) => terrain[c] === this.playerIndex
-    );
-
-    const [myArmy, rowSum, colSum] = terrain.reduce(
-      (acc, t, i) => {
-        if (t === this.playerIndex) {
-          acc[0].push(i);
-        }
-        acc[1] += Math.floor(i / width);
-        acc[2] += i % width;
-        return acc;
-      },
-      [[], 0, 0]
-    );
-
-    const highTileStack = myArmy.slice().sort((a, b) => armies[a] - armies[b]);
-
-    const myScore = this.game.scores.find((s) => s.i === this.playerIndex);
-    const numTroops = myScore.total;
-    const numTiles = myScore.tiles;
-    const avgTileSize = Math.floor(numTroops / numTiles);
-    let headSize = armies[this.headIndex];
-
-    console.log(`headIndex at ${this.headIndex}, headSize ${headSize}`);
-
-    const avgRow = Math.floor(rowSum / numTiles);
-    const avgCol = Math.floor(colSum / numTiles);
-    const centerIndex = avgRow * width + avgCol; // based on centerIndex of army
+    this.headSize = this.game.armies[this.headIndex];
 
     if (this.target !== -1 && terrain[this.target] === this.playerIndex) {
       this.target = -1;
@@ -103,43 +56,35 @@ class Player {
       console.log(`targeting finished`);
     }
 
-    this.resetHead = false;
     if (
-      headSize < avgTileSize ||
+      this.headSize < avgTileSize ||
       terrain[this.headIndex] !== this.playerIndex
     ) {
       this.resetHead = true;
     }
 
     if (this.resetHead) {
-      let nextHeadIndex;
-      do {
-        nextHeadIndex = highTileStack.pop();
-      } while (nextHeadIndex === this.headIndex);
-      this.headIndex = nextHeadIndex;
-      headSize = armies[this.headIndex];
+      this.headIndex = this.game.terrain.reduce((max, tile, index) => {
+        if (tile === this.playerIndex && index !== this.headIndex) {
+          if (max === -1) {
+            return index;
+          } else {
+            return this.game.armies[index] > this.game.armies[max]
+              ? index
+              : max;
+          }
+        }
+      }, -1);
+      this.headSize = this.game.armies[this.headIndex];
       this.currPath.clear();
       this.currPath.set(this.headIndex, 1);
       console.log(
-        `resetting to headIndex ${this.headIndex}, headSize ${headSize}`
+        `resetting to headIndex ${this.headIndex}, this.headSize ${this.headSize}`
       );
       this.resetHead = false;
     }
 
-    let nextIndex;
-    nextIndex = Spread(
-      this.playerIndex,
-      width,
-      height,
-      this.headIndex,
-      centerIndex,
-      avgTileSize,
-      terrain,
-      armies,
-      this.game.cities,
-      this.currPath,
-      eDist
-    );
+    let nextIndex = Spread(this, this.game, eDist);
 
     // used to determine the number troops needed for takeover
     let targetingEnemyTerritory = false;
@@ -192,7 +137,9 @@ class Player {
 
     // if possible this.target cities
     if (this.target === -1) {
-      const numOwnedCities = myCities.length;
+      const numOwnedCities = cities.filter(
+        (c) => terrain[c] === this.playerIndex
+      ).length;
       if (
         numOwnedCities < Math.floor(turn / 75) &&
         this.game.cities.length > numOwnedCities &&
@@ -226,7 +173,7 @@ class Player {
     // // if head is too small and far away, reset head
     // if (
     //   this.target !== -1 &&
-    //   headSize < armies[this.target] + 2 &&
+    //   this.headSize < this.game.armies[this.target] + 2 &&
     //   eDist(this.headIndex, this.target) < 2 &&
     //   eDist(crown, this.headIndex) > 10
     // ) {
@@ -243,7 +190,7 @@ class Player {
         this.headIndex,
         this.target,
         terrain,
-        armies,
+        this.game.armies,
         this.game.cities,
         this.playerIndex,
         width,
@@ -261,7 +208,7 @@ class Player {
           this.headIndex,
           this.target,
           terrain,
-          armies,
+          this.game.armies,
           this.game.cities,
           this.playerIndex,
           width,
