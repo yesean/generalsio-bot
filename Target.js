@@ -36,13 +36,11 @@ class Target {
 
     // always target nearby enemies
     const closeEnemy = terrain.reduce((closest, tile, index) => {
-      if (tile !== playerIndex && tile >= 0 && eDist(crown, index, width) < 7) {
+      if (tile !== playerIndex && tile >= 0 && eDist(crown, index) < 7) {
         if (closest === -1) {
           return index;
         } else {
-          return eDist(crown, index, width) < eDist(crown, closest, width)
-            ? index
-            : closest;
+          return eDist(crown, index) < eDist(crown, closest) ? index : closest;
         }
       } else {
         return closest;
@@ -68,16 +66,16 @@ class Target {
       this.target === -1 &&
       terrain.some(
         (tile, index) =>
-          tile !== playerIndex && tile >= 0 && reachableTile(index, width)
+          tile !== playerIndex && tile >= 0 && reachableTile(index)
       )
     ) {
       enemyTerritory = terrain.reduce((closest, tile, index) => {
-        if (tile !== playerIndex && tile >= 0 && reachableTile(index, width)) {
+        if (tile !== playerIndex && tile >= 0 && reachableTile(index)) {
           if (closest === -1) {
             return index;
           } else {
-            const tDist = eDist(crown, index, width);
-            const cDist = eDist(crown, closest, width);
+            const tDist = eDist(crown, index);
+            const cDist = eDist(crown, closest);
             return tDist < cDist ? index : closest;
           }
         }
@@ -95,9 +93,7 @@ class Target {
     ) {
       this.target = cities
         .filter((city) => terrain[city] !== playerIndex)
-        .reduce((min, c) =>
-          eDist(crown, c, width) < eDist(crown, min, width) ? c : min
-        );
+        .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
       this.targetType = 'city';
       return true;
     }

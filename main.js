@@ -18,6 +18,8 @@ socket.on('disconnect', () => {
   // console.error('Disconnected from server.');
   // process.exit(1);
   socket.connect();
+
+  // periodically leave and rejoin to avoid being host
   setInterval(() => {
     socket.emit('join_private', custom_game_id, user_id);
     socket.emit('set_force_start', custom_game_id, true);

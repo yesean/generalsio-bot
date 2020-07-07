@@ -109,4 +109,4 @@ const getNextIndex = (
     });
 };
 
-module.exports = getNextIndex;
+exports.getNextIndex = getNextIndex;

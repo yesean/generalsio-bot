@@ -20,44 +20,48 @@ class Player {
   }
 
   // euclidean distance
-  eDist(start, end, width) {
-    return Math.sqrt(
-      Math.pow(Math.floor(end / width) - Math.floor(start / width), 2) +
-        Math.pow((end % width) - (start % width), 2)
+  eDist = (start, end) =>
+    Math.sqrt(
+      Math.pow(
+        Math.floor(end / this.game.width) - Math.floor(start / this.game.width),
+        2
+      ) + Math.pow((end % this.game.width) - (start % this.game.width), 2)
     );
-  }
 
-  // manhattan distance
-  mDist(start, end, width) {
-    return (
-      Math.abs(Math.floor(end / width) - Math.floor(start / width)) +
-      Math.abs((end % width) - (start % width))
-    );
-  }
+  // // manhattan distance
+  // mDist(start, end) {
+  //   return (
+  //     Math.abs(Math.floor(end / this.game.width) - Math.floor(start / this.game.width)) +
+  //     Math.abs((end % this.game.width) - (start % this.game.width))
+  //   );
+  // }
 
   // check if tile can be currently reachable
-  reachableTile(tile, width) {
-    return (
-      terrain[tile - 1] >= TILE_EMPTY ||
-      terrain[tile + 1] >= TILE_EMPTY ||
-      terrain[tile - width] >= TILE_EMPTY ||
-      terrain[tile + width] >= TILE_EMPTY ||
-      terrain[tile] >= 0
-    );
-  }
+  reachableTile = (tile) =>
+    terrain[tile - 1] >= TILE_EMPTY ||
+    terrain[tile + 1] >= TILE_EMPTY ||
+    terrain[tile - this.game.width] >= TILE_EMPTY ||
+    terrain[tile + this.game.width] >= TILE_EMPTY ||
+    terrain[tile] >= 0;
 
-  resetHead = () => {
-    this.headIndex = this.game.terrain.reduce((max, tile, index) => {
-      if (tile === this.playerIndex && index !== this.headIndex) {
-        if (max === -1) {
-          return index;
+  resetHead = (index = -1) => {
+    if (index !== -1) {
+      this.headIndex = index;
+    } else {
+      this.headIndex = this.game.terrain.reduce((max, tile, index) => {
+        if (tile === this.playerIndex && index !== this.headIndex) {
+          if (max === -1) {
+            return index;
+          } else {
+            return this.game.armies[index] > this.game.armies[max]
+              ? index
+              : max;
+          }
         } else {
-          return this.game.armies[index] > this.game.armies[max] ? index : max;
+          return max;
         }
-      } else {
-        return max;
-      }
-    }, -1);
+      }, -1);
+    }
     this.headSize = this.game.armies[this.headIndex];
     this.currPath.clear();
     this.currPath.set(this.headIndex, 1);
@@ -103,7 +107,7 @@ class Player {
     } else {
       console.log(`spreading`);
       // spreading
-      nextIndex = Spread(this, this.game);
+      nextIndex = Spread.getNextIndex(this, this.game);
 
       // update currpath if spreading
       if (this.currPath.has(nextIndex)) {
