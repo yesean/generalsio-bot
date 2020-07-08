@@ -10,27 +10,25 @@ const io = require('socket.io-client');
 const socket = io('http://botws.generals.io');
 
 // define user id and username
-const user_id = process.env.USER_ID;
-const username = process.env.USERNAME;
+const user_id = `${process.env.USER_ID}3`;
+const username = `${process.env.USERNAME}3`;
 const custom_game_id = process.env.GAME_ID;
 
 socket.on('disconnect', () => {
   // console.error('Disconnected from server.');
   // process.exit(1);
-  setTimeout(() => {
-    socket.connect();
-  }, 10000);
+  setTimeout(() => {}, 10000);
+  socket.connect();
 });
 
 socket.on('connect', () => {
-  console.log('Connected to server.');
+  socket.emit('set_username', user_id, username);
   socket.emit('join_private', custom_game_id, user_id);
   console.log(
     `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
       custom_game_id
     )}`
   );
-
   setTimeout(() => {
     setInterval(() => {
       socket.emit('set_force_start', custom_game_id, true);

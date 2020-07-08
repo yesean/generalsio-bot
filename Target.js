@@ -21,7 +21,9 @@ class Target {
       armies,
       terrain,
       foundGenerals,
+      myScore,
       numOwnedCities,
+      currEnemy,
       eDist,
       isReachable,
     } = game;
@@ -76,9 +78,14 @@ class Target {
       this.targetIndex = foundGenerals[0];
       this.targetType = 'crown';
     } else if (
-      // if not busy targetIndex cities
-      numOwnedCities < Math.floor(turn / 75) &&
-      cities.length > numOwnedCities
+      // if not busy targetIndex cities if lacking or enemies are afar
+      cities.length > numOwnedCities &&
+      myScore.tiles > 10 &&
+      (numOwnedCities < Math.floor(turn / 75) ||
+        !terrain.some(
+          (tile, index) =>
+            tile !== playerIndex && tile >= 0 && eDist(crown, index) < 10
+        ))
     ) {
       this.targetIndex = cities
         .filter((city) => terrain[city] !== playerIndex)
@@ -86,24 +93,38 @@ class Target {
       this.targetType = 'city';
     } else if (
       // if not busy targetIndex enemy territory
-      terrain.some(
-        (tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index)
-      )
+      // terrain.some((tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index))
+      currEnemy !== -1
     ) {
-      const enemyTerritory = terrain.reduce((closest, tile, index) => {
-        if (tile !== playerIndex && tile >= 0 && isReachable(index)) {
-          if (closest === -1) {
-            return index;
-          } else {
-            const tDist = eDist(headIndex, index);
-            const cDist = eDist(headIndex, closest);
-            return tDist < cDist ? index : closest;
+      const enemyScore = game.scores.find((score) => score.i === currEnemy);
+      const enemyInfo = terrain.reduce(
+        (info, tile, index) => {
+          if (tile === currEnemy) {
+            info[0] += Math.floor(index / width);
+            info[1] += index % width;
+            info[2]++;
           }
-        } else {
-          return closest;
-        }
-      }, -1);
-      this.targetIndex = enemyTerritory;
+          return info;
+        },
+        [0, 0, 0]
+      );
+      enemyInfo[0] = Math.floor(enemyInfo[0] / enemyInfo[2]);
+      enemyInfo[1] = Math.floor(enemyInfo[1] / enemyInfo[2]);
+      // const enemyTerritory = terrain.reduce((closest, tile, index) => {
+      //   if (tile !== playerIndex && tile >= 0 && isReachable(index)) {
+      //     if (closest === -1) {
+      //       return index;
+      //     } else {
+      //       const tDist = eDist(headIndex, index);
+      //       const cDist = eDist(headIndex, closest);
+      //       return tDist < cDist ? index : closest;
+      //     }
+      //   } else {
+      //     return closest;
+      //   }
+      // }, -1);
+      // this.targetIndex = enemyTerritory;
+      this.targetIndex = enemyInfo[0] * width + enemyInfo[1];
       this.targetType = 'enemy territory';
     }
 
@@ -148,15 +169,17 @@ class Target {
     }
 
     // if current path isn't enough, gather troops on path
-    let captureCost =
-      eDist(this.startIndex, this.targetIndex) > 15 &&
-      this.targetType === 'enemy territory'
-        ? 10 * avgTileSize
-        : 2;
-    if (
-      this.gatherTargetIndex === -1 &&
-      this.getPathSum(game) < armies[this.targetIndex] + captureCost
-    ) {
+    let captureCost;
+    // eDist(this.startIndex, this.targetIndex) > 15 &&
+    if (this.targetType === 'enemyTerritory') {
+      const enemyScore = game.scores.find(
+        (score) => score.i === game.currEnemy
+      );
+      captureCost = 10 * Math.floor(enemyScore.total / enemyScore.tiles);
+    } else {
+      captureCost = armies[this.targetIndex] + 2;
+    }
+    if (this.gatherTargetIndex === -1 && this.getPathSum(game) < captureCost) {
       console.log(`calculating gather`);
       const [pathRow, pathCol] = this.targetPath
         .reduce(
@@ -301,7 +324,7 @@ class Target {
         } else {
           // add weight to unknown obstacles
           if (terrain[nextIndex] === Game.TILE_FOG_OBSTACLE) {
-            moveWeight += 50;
+            moveWeight += 40;
           }
 
           // add weight to cities
@@ -335,7 +358,7 @@ class Target {
     // determine shortest path
     const path = [];
     let prevIndex = end;
-    while (prevIndex !== start) {
+    while (prevIndex) {
       path.unshift(prevIndex);
       prevIndex = prev.get(prevIndex);
     }

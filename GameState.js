@@ -44,6 +44,7 @@ class GameState {
     this.numOwnedCities = 0;
     this.center = { row: 0, col: 0 };
     this.avgTileSize = 0;
+    this.currEnemy = -1;
   }
 
   static get TILE_EMPTY() {
@@ -152,6 +153,17 @@ class GameState {
       )
       .map((avg) => avg / this.myScore.tiles);
     this.avgTileSize = this.myScore.total / this.myScore.tiles;
+
+    // update enemies as you find them
+    if ((this.currEnemy = -1)) {
+      this.currEnemy = this.terrain.find(
+        (tile, index) =>
+          tile !== this.playerIndex && tile >= 0 && this.isReachable(index)
+      );
+      if (typeof this.currEnemy === 'undefined') {
+        this.currEnemy = -1;
+      }
+    }
   }
 }
 

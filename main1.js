@@ -23,15 +23,16 @@ socket.on('disconnect', () => {
 
 socket.on('connect', () => {
   socket.emit('join_private', custom_game_id, user_id);
-  socket.emit('set_force_start', custom_game_id, true);
   console.log(
     `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
       custom_game_id
     )}`
   );
-  setInterval(() => {
-    socket.emit('set_force_start', custom_game_id, true);
-  }, 3000);
+  setTimeout(() => {
+    setInterval(() => {
+      socket.emit('set_force_start', custom_game_id, true);
+    }, 1000);
+  }, 5000);
 });
 
 // game data
