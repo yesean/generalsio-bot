@@ -2,12 +2,6 @@ const GameState = require('./GameState');
 const Spread = require('./Spread');
 const Target = require('./Target');
 
-// terrain constants
-const TILE_EMPTY = -1;
-const TILE_MOUNTAIN = -2;
-const TILE_FOG = -3;
-const TILE_FOG_OBSTACLE = -4;
-
 class Player {
   constructor(socket, playerIndex) {
     this.socket = socket;
@@ -18,23 +12,6 @@ class Player {
     this.headSize = 0;
     this.currPath = new Map();
   }
-
-  // euclidean distance
-  eDist = (start, end) =>
-    Math.sqrt(
-      Math.pow(
-        Math.floor(end / this.game.width) - Math.floor(start / this.game.width),
-        2
-      ) + Math.pow((end % this.game.width) - (start % this.game.width), 2)
-    );
-
-  // check if tile can be currently reachable
-  reachableTile = (tile) =>
-    this.game.terrain[tile - 1] >= TILE_EMPTY ||
-    this.game.terrain[tile + 1] >= TILE_EMPTY ||
-    this.game.terrain[tile - this.game.width] >= TILE_EMPTY ||
-    this.game.terrain[tile + this.game.width] >= TILE_EMPTY ||
-    this.game.terrain[tile] >= 0;
 
   resetHead = (index = -1) => {
     if (index !== -1) {

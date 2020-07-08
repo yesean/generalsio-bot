@@ -1,5 +1,11 @@
 const { runInThisContext } = require('vm');
 
+// terrain constants
+const TILE_EMPTY = -1;
+const TILE_MOUNTAIN = -2;
+const TILE_FOG = -3;
+const TILE_FOG_OBSTACLE = -4;
+
 // patch diff array into current array
 const patch = (old, diff) => {
   let out = [];
@@ -40,6 +46,52 @@ class GameState {
     this.avgTileSize = 0;
   }
 
+  static get TILE_EMPTY() {
+    return TILE_EMPTY;
+  }
+
+  static get TILE_MOUNTAIN() {
+    return TILE_MOUNTAIN;
+  }
+
+  static get TILE_FOG() {
+    return TILE_FOG;
+  }
+
+  static get TILE_FOG_OBSTACLE() {
+    return TILE_FOG_OBSTACLE;
+  }
+
+  // calculate euclidean distance between two tiles
+  eDist = (start, end) =>
+    Math.sqrt(
+      Math.pow(
+        Math.floor(end / this.width) - Math.floor(start / this.width),
+        2
+      ) + Math.pow((end % this.width) - (start % this.width), 2)
+    );
+
+  // check if index can be currently reachable
+  isReachable = (index) =>
+    (this.terrain[index - 1] >= TILE_EMPTY && index !== 0) ||
+    (this.terrain[index + 1] >= TILE_EMPTY && index !== this.width - 1) ||
+    this.terrain[index - this.width] >= TILE_EMPTY ||
+    this.terrain[index + this.width] >= TILE_EMPTY ||
+    this.terrain[index] >= 0;
+
+  // check if move is valid
+  isValidMove = (start, end) => {
+    const startCol = start % this.width;
+    const endRow = Math.floor(end / this.width);
+    const endCol = end % this.width;
+    return !(
+      endRow < 0 ||
+      endRow >= this.height ||
+      (startCol === 0 && endCol > 1) ||
+      (startCol === this.width - 1 && endCol < this.width - 2)
+    );
+  };
+
   // update game state
   update(data) {
     // game data
@@ -57,13 +109,16 @@ class GameState {
     this.armies = this.map.slice(2, this.size + 2);
     this.terrain = this.map.slice(this.size + 2, this.size + 2 + this.size);
 
+    // filter cities
+    this.cities = this.cities.filter((city) => this.isReachable(city));
+
     // my data
     this.myScore = this.scores.find((score) => score.i === this.playerIndex);
     // number of cities I currently own
     this.numOwnedCities = this.cities.filter(
       (city) => this.terrain[city] === this.playerIndex
     ).length;
-    // update located generals
+    // update located crowns
     for (const general of this.generals) {
       if (
         general !== -1 &&
@@ -73,8 +128,9 @@ class GameState {
         this.foundGenerals.push(general);
       }
     }
+    // remove captured crowns
     if (
-      this.foundGenerals > 0 &&
+      this.foundGenerals.length > 0 &&
       this.terrain[this.foundGenerals[0]] === this.playerIndex
     ) {
       this.foundGenerals.shift();

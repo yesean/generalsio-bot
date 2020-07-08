@@ -1,12 +1,8 @@
-// terrain constants
-const TILE_EMPTY = -1;
-const TILE_MOUNTAIN = -2;
-const TILE_FOG = -3;
-const TILE_FOG_OBSTACLE = -4;
+const Game = require('./GameState');
 
-const getNextIndex = (
-  { headIndex, headSize, currPath, eDist },
-  {
+const getNextIndex = (player, game) => {
+  const { headIndex, headSize, currPath } = player;
+  const {
     playerIndex,
     width,
     height,
@@ -16,13 +12,11 @@ const getNextIndex = (
     terrain,
     center,
     avgTileSize,
-  }
-) => {
-  console.log(`spreading`);
-  // calculate head coordinates
-  const row = Math.floor(headIndex / width);
-  const col = headIndex % width;
+    eDist,
+    isValidMove,
+  } = game;
 
+  console.log(`spreading`);
   // order moves based on center of army
   const up = center.row < Math.floor(height / 2);
   const left = center.col < Math.floor(width / 2);
@@ -36,21 +30,9 @@ const getNextIndex = (
   }
 
   // filter out illegal moves
-  if (row === 0) {
-    moves = moves.filter((m) => m !== -width);
-  }
-  if (row === height - 1) {
-    moves = moves.filter((m) => m !== width);
-  }
-  if (col === 0) {
-    moves = moves.filter((m) => m !== -1);
-  }
-  if (col === width - 1) {
-    moves = moves.filter((m) => m !== 1);
-  }
-
+  moves = moves.filter((move) => isValidMove(headIndex, headIndex + move));
   // filter out moves into mountains
-  moves = moves.filter((m) => terrain[headIndex + m] !== TILE_MOUNTAIN);
+  moves = moves.filter((m) => terrain[headIndex + m] !== Game.TILE_MOUNTAIN);
 
   const calcWeight = (index) => {
     let weight = 0;
@@ -64,7 +46,10 @@ const getNextIndex = (
     // underweight blank tiles
     if (terrain[index] === playerIndex && armies[index] === 1) {
       weight += size;
-    } else if (terrain[index] === TILE_EMPTY && cities.indexOf(index) === -1) {
+    } else if (
+      terrain[index] === Game.TILE_EMPTY &&
+      cities.indexOf(index) === -1
+    ) {
       weight -= size;
     }
 
@@ -91,15 +76,11 @@ const getNextIndex = (
       weight -= armies[index];
     }
 
-    // // add weight to tiles away from center of army
-    // const centerIndex = center.row * width + center.col;
-    // const distToCenter = eDist(index, centerIndex, width);
-    // weight -= distToCenter;
     return weight;
   };
 
   return moves
-    .map((m) => headIndex + m)
+    .map((move) => headIndex + move)
     .reduce((bestNextIndex, nextIndex) => {
       const moveWeight = calcWeight(nextIndex);
       const currBestMoveWeight = calcWeight(bestNextIndex);

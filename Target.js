@@ -1,10 +1,4 @@
-const { reset } = require('nodemon');
-
-// terrain constants
-const TILE_EMPTY = -1;
-const TILE_MOUNTAIN = -2;
-const TILE_FOG = -3;
-const TILE_FOG_OBSTACLE = -4;
+const Game = require('./GameState');
 
 class Target {
   constructor() {
@@ -16,55 +10,152 @@ class Target {
     this.gatherPath = [];
   }
 
-  getNextIndex = (
-    { playerIndex, headIndex, headSize, eDist, resetHead },
-    { cities, width, height, armies, terrain, avgTileSize }
-  ) => {
+  hasTarget = (player, game) => {
+    const { playerIndex, headIndex, headSize, resetHead } = player;
+    const {
+      turn,
+      crown,
+      cities,
+      width,
+      height,
+      armies,
+      terrain,
+      foundGenerals,
+      numOwnedCities,
+      eDist,
+      isReachable,
+    } = game;
+
+    // reset if gatherTargetIndex is acquired
+    if (this.gatherTargetIndex !== -1) {
+      if (headIndex === this.gatherTargetIndex) {
+        this.gatherTargetIndex = -1;
+        console.log(`finished gathering`);
+      } else {
+        console.log(`gathering`);
+        return true;
+      }
+    }
+    // reset if targetIndex is acquired
+    if (this.targetIndex !== -1) {
+      if (terrain[this.targetIndex] === playerIndex) {
+        this.targetIndex = -1;
+        this.targetType = '';
+        console.log(`finished targeting`);
+      } else {
+        // reset targetPath if head isnt big enough
+        if (headIndex === this.targetIndex) {
+          this.startIndex = resetHead();
+          this.setTargetPath(player, game);
+        }
+        console.log(
+          `targeting ${this.targetType} at index ${this.targetIndex}`
+        );
+        return true;
+      }
+    }
+
+    const closeEnemy = terrain.reduce((closest, tile, index) => {
+      if (tile !== playerIndex && tile >= 0 && eDist(crown, index) < 7) {
+        if (closest === -1) {
+          return index;
+        } else {
+          return eDist(crown, index) < eDist(crown, closest) ? index : closest;
+        }
+      } else {
+        return closest;
+      }
+    }, -1);
+
+    // always targetIndex nearby enemies
+    if (closeEnemy !== -1 && this.targetType !== 'close enemy') {
+      this.targetIndex = closeEnemy;
+      this.targetType = 'close enemy';
+    } else if (foundGenerals.length > 0) {
+      // if not busy targetIndex enemy crown
+      this.targetIndex = foundGenerals[0];
+      this.targetType = 'crown';
+    } else if (
+      // if not busy targetIndex cities
+      numOwnedCities < Math.floor(turn / 75) &&
+      cities.length > numOwnedCities
+    ) {
+      this.targetIndex = cities
+        .filter((city) => terrain[city] !== playerIndex)
+        .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
+      this.targetType = 'city';
+    } else if (
+      // if not busy targetIndex enemy territory
+      terrain.some(
+        (tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index)
+      )
+    ) {
+      const enemyTerritory = terrain.reduce((closest, tile, index) => {
+        if (tile !== playerIndex && tile >= 0 && isReachable(index)) {
+          if (closest === -1) {
+            return index;
+          } else {
+            const tDist = eDist(headIndex, index);
+            const cDist = eDist(headIndex, closest);
+            return tDist < cDist ? index : closest;
+          }
+        } else {
+          return closest;
+        }
+      }, -1);
+      this.targetIndex = enemyTerritory;
+      this.targetType = 'enemy territory';
+    }
+
+    if (this.targetIndex !== -1) {
+      console.log(`targeting ${this.targetType} at index ${this.targetIndex}`);
+      // reset head if head is too far and small from targetIndex
+      if (
+        terrain[headIndex] !== playerIndex ||
+        headSize < 2 ||
+        armies[this.targetIndex] / headSize > 5 ||
+        eDist(headIndex, this.targetIndex, width) > 15
+      ) {
+        console.log(`resetting startIndex`);
+        this.startIndex = resetHead();
+      } else {
+        this.startIndex = headIndex;
+      }
+      this.setTargetPath(player, game);
+    }
+
+    // no targets
+    return this.targetIndex !== -1;
+  };
+
+  getNextIndex = (player, game) => {
+    const { playerIndex, headIndex, resetHead } = player;
+    const { width, height, armies, terrain, avgTileSize, eDist } = game;
     // reset path if mountain is hit
     if (
       this.gatherPath.length > 0 &&
-      terrain[this.gatherPath[0] === TILE_MOUNTAIN]
+      terrain[this.gatherPath[0] === Game.TILE_MOUNTAIN]
     ) {
       console.log(`resetting path, initial path hit mountain`);
-      this.setPath(
-        playerIndex,
-        headSize,
-        eDist,
-        resetHead,
-        cities,
-        width,
-        height,
-        armies,
-        terrain,
-        avgTileSize,
-        headIndex,
-        this.gatherTargetIndex
-      );
+      this.setTargetPath(player, game);
     } else if (
       this.targetPath.length > 0 &&
-      terrain[this.targetPath[0]] === TILE_MOUNTAIN
+      terrain[this.targetPath[0]] === Game.TILE_MOUNTAIN
     ) {
       console.log(`resetting path, initial path hit mountain`);
       this.startIndex = headIndex;
-      this.setTargetPath(
-        playerIndex,
-        headSize,
-        eDist,
-        resetHead,
-        cities,
-        width,
-        height,
-        armies,
-        terrain,
-        avgTileSize
-      );
+      this.setTargetPath(player, game);
     }
 
     // if current path isn't enough, gather troops on path
+    let captureCost =
+      eDist(this.startIndex, this.targetIndex) > 15 &&
+      this.targetType === 'enemy territory'
+        ? 10 * avgTileSize
+        : 2;
     if (
       this.gatherTargetIndex === -1 &&
-      this.getPathSum(playerIndex, armies, terrain) <
-        armies[this.targetIndex] + 2
+      this.getPathSum(game) < armies[this.targetIndex] + captureCost
     ) {
       console.log(`calculating gather`);
       const [pathRow, pathCol] = this.targetPath
@@ -108,18 +199,10 @@ class Target {
         `gathering from ${gatherStartIndex} to ${this.gatherTargetIndex}`
       );
       this.setGatherPath(
-        playerIndex,
-        headSize,
-        eDist,
-        resetHead,
-        cities,
-        width,
-        height,
-        armies,
-        terrain,
-        avgTileSize,
         gatherStartIndex,
-        this.gatherTargetIndex
+        this.gatherTargetIndex,
+        player,
+        game
       );
     }
 
@@ -130,33 +213,53 @@ class Target {
     return this.gatherPath.shift() || this.targetPath.shift();
   };
 
-  // insert tile into priority queue for dijkstra's
-  insert = (array, index, weights) => {
-    let added = false;
-    for (let i = 0; i < array.length; ++i) {
-      if (weights[index] < weights[array[i]]) {
-        array.splice(i, 0, index);
-        added = true;
-        break;
+  setTargetPath = (player, game) => {
+    // calculate path
+    console.log(
+      `running dijkstra's from ${this.startIndex} to ${this.targetIndex}`
+    );
+    this.targetPath = this.dijkstra(this.startIndex, this.targetIndex, game);
+  };
+
+  setGatherPath = (start, end, player, game) => {
+    // calculate path
+    console.log(`running dijkstra's from ${start} to ${end}`);
+    this.gatherPath = this.dijkstra(start, end, game, true);
+  };
+
+  getPathSum = (game) => {
+    const { playerIndex, armies, terrain } = game;
+    // calculate how much head will have on arrival
+    let sum = armies[this.startIndex] - 1;
+    for (const index of this.targetPath) {
+      if (index !== this.targetIndex) {
+        if (
+          terrain[index] === playerIndex ||
+          terrain[index] === Game.TILE_FOG
+        ) {
+          sum += armies[index] - 1;
+        } else if (terrain[index] >= 0) {
+          sum -= armies[index] + 1;
+        } else if (terrain[index] === Game.TILE_FOG_OBSTACLE) {
+          sum -= 50 + 1;
+        }
       }
     }
-    if (!added) {
-      array.push(index);
-    }
+    console.log(`pathsum: ${sum}, armies[target]: ${armies[this.targetIndex]}`);
+    return sum;
   };
 
   // calculate path to targetIndex with dijkstra's
-  dijkstra = (
-    start,
-    end,
-    playerIndex,
-    armies,
-    terrain,
-    cities,
-    width,
-    height,
-    gather = false
-  ) => {
+  dijkstra = (start, end, game, gather = false) => {
+    const {
+      playerIndex,
+      armies,
+      terrain,
+      cities,
+      width,
+      height,
+      isValidMove,
+    } = game;
     let prev = new Map();
     let weights = terrain.map((tile) => Number.MAX_SAFE_INTEGER);
     weights[start] = 1;
@@ -177,10 +280,8 @@ class Target {
         // ignore impossible moves
         const nextIndex = currIndex + move;
         if (
-          terrain[nextIndex] === TILE_MOUNTAIN ||
-          nextIndex < 0 ||
-          nextIndex >= width * height ||
-          Math.abs((nextIndex % width) - (currIndex % width)) > 1
+          terrain[nextIndex] === Game.TILE_MOUNTAIN ||
+          !isValidMove(currIndex, nextIndex)
         ) {
           continue;
         }
@@ -189,7 +290,7 @@ class Target {
         // when gathering, favor my own tiles and blanks
         if (gather) {
           if (
-            (terrain[nextIndex] === TILE_EMPTY &&
+            (terrain[nextIndex] === Game.TILE_EMPTY &&
               cities.indexOf(nextIndex) === -1) ||
             terrain[nextIndex] === playerIndex
           ) {
@@ -199,7 +300,7 @@ class Target {
           }
         } else {
           // add weight to unknown obstacles
-          if (terrain[nextIndex] === TILE_FOG_OBSTACLE) {
+          if (terrain[nextIndex] === Game.TILE_FOG_OBSTACLE) {
             moveWeight += 50;
           }
 
@@ -241,220 +342,21 @@ class Target {
     return path;
   };
 
-  hasTarget = (
-    { playerIndex, headIndex, headSize, eDist, reachableTile, resetHead },
-    {
-      turn,
-      crown,
-      cities,
-      width,
-      height,
-      armies,
-      terrain,
-      foundGenerals,
-      numOwnedCities,
-      avgTileSize,
-    }
-  ) => {
-    // reset if gatherTargetIndex or targetIndex is aqcquired
-    if (this.gatherTargetIndex !== -1) {
-      if (headIndex === this.gatherTargetIndex) {
-        this.gatherTargetIndex = -1;
-        console.log(`finished gathering`);
-      } else {
-        console.log(`gathering`);
-        return true;
+  // insert tile into priority queue for dijkstra's
+  insert = (array, index, weights) => {
+    let added = false;
+    for (let i = 0; i < array.length; ++i) {
+      if (weights[index] < weights[array[i]]) {
+        array.splice(i, 0, index);
+        added = true;
+        break;
       }
     }
-    if (this.targetIndex !== -1) {
-      if (terrain[this.targetIndex] === playerIndex) {
-        this.targetIndex = -1;
-        this.targetType = '';
-        console.log(`finished targeting`);
-      } else {
-        // reset targetPath if head isnt big enough
-        if (headIndex === this.targetIndex) {
-          this.startIndex = resetHead();
-          this.setTargetPath(
-            playerIndex,
-            headSize,
-            eDist,
-            resetHead,
-            cities,
-            width,
-            height,
-            armies,
-            terrain,
-            avgTileSize
-          );
-        }
-        console.log(
-          `targeting ${this.targetType} at index ${this.targetIndex}`
-        );
-        return true;
-      }
+    if (!added) {
+      array.push(index);
     }
-
-    const closeEnemy = terrain.reduce((closest, tile, index) => {
-      if (tile !== playerIndex && tile >= 0 && eDist(crown, index) < 10) {
-        if (closest === -1) {
-          return index;
-        } else {
-          return eDist(crown, index) < eDist(crown, closest) ? index : closest;
-        }
-      } else {
-        return closest;
-      }
-    }, -1);
-    // always targetIndex nearby enemies
-    if (closeEnemy !== -1 && this.targetType !== 'close enemy') {
-      this.targetIndex = closeEnemy;
-      this.targetType = 'close enemy';
-    } else if (foundGenerals.length > 0) {
-      // if not busy targetIndex enemy crown
-      this.targetIndex = foundGenerals[0];
-      this.targetType = 'crown';
-    } else if (
-      // if not busy targetIndex cities
-      numOwnedCities < Math.floor(turn / 75) &&
-      cities.length > numOwnedCities
-    ) {
-      this.targetIndex = cities
-        .filter((city) => terrain[city] !== playerIndex)
-        .reduce((min, c) => (eDist(crown, c) < eDist(crown, min) ? c : min));
-      this.targetType = 'city';
-    } else if (
-      // if not busy targetIndex enemy territory
-      terrain.some(
-        (tile, index) =>
-          tile !== playerIndex && tile >= 0 && reachableTile(index)
-      )
-    ) {
-      const enemyTerritory = terrain.reduce((closest, tile, index) => {
-        if (tile !== playerIndex && tile >= 0 && reachableTile(index)) {
-          if (closest === -1) {
-            return index;
-          } else {
-            const tDist = eDist(headIndex, index);
-            const cDist = eDist(headIndex, closest);
-            return tDist < cDist ? index : closest;
-          }
-        } else {
-          return closest;
-        }
-      }, -1);
-      this.targetIndex = enemyTerritory;
-      this.targetType = 'enemy territory';
-    }
-
-    if (this.targetIndex !== -1) {
-      console.log(`targeting ${this.targetType} at index ${this.targetIndex}`);
-      // reset head if head is too far and small from targetIndex
-      if (
-        terrain[headIndex] !== playerIndex ||
-        headSize < 2 ||
-        armies[this.targetIndex] / headSize > 5 ||
-        eDist(headIndex, this.targetIndex, width) > 15
-      ) {
-        console.log(`resetting startIndex`);
-        this.startIndex = resetHead();
-      } else {
-        this.startIndex = headIndex;
-      }
-      this.setTargetPath(
-        playerIndex,
-        headSize,
-        eDist,
-        resetHead,
-        cities,
-        width,
-        height,
-        armies,
-        terrain,
-        avgTileSize
-      );
-    }
-
-    // no targets
-    return this.targetIndex !== -1;
-  };
-
-  setTargetPath = (
-    playerIndex,
-    headSize,
-    eDist,
-    resetHead,
-    cities,
-    width,
-    height,
-    armies,
-    terrain,
-    avgTileSize
-  ) => {
-    // calculate path
-    console.log(
-      `running dijkstra's from ${this.startIndex} to ${this.targetIndex}`
-    );
-    this.targetPath = this.dijkstra(
-      this.startIndex,
-      this.targetIndex,
-      playerIndex,
-      armies,
-      terrain,
-      cities,
-      width,
-      height
-    );
-  };
-
-  setGatherPath = (
-    playerIndex,
-    headSize,
-    eDist,
-    resetHead,
-    cities,
-    width,
-    height,
-    armies,
-    terrain,
-    avgTileSize,
-    start,
-    end
-  ) => {
-    // calculate path
-    console.log(`running dijkstra's from ${start} to ${end}`);
-    this.gatherPath = this.dijkstra(
-      start,
-      end,
-      playerIndex,
-      armies,
-      terrain,
-      cities,
-      width,
-      height,
-      true
-    );
-  };
-
-  getPathSum = (playerIndex, armies, terrain) => {
-    // calculate how much head will have on arrival
-    let sum = armies[this.startIndex];
-    for (const index of this.targetPath) {
-      if (index !== this.targetIndex) {
-        if (terrain[index] === playerIndex || terrain[index] === TILE_FOG) {
-          sum += armies[index] - 1;
-        } else if (terrain[index] >= 0) {
-          sum -= armies[index] + 1;
-        } else if (terrain[index] === TILE_FOG_OBSTACLE) {
-          sum -= 50 + 1;
-        }
-      }
-    }
-    console.log(`pathsum: ${sum}, armies[target]: ${armies[this.targetIndex]}`);
-    return sum;
   };
 }
-
 // const getTargetPath = (headIndex, targetIndex, terrain) => {
 //   const moves = [-1, 1, -width, width];
 
