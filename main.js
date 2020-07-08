@@ -17,16 +17,9 @@ const custom_game_id = process.env.GAME_ID;
 socket.on('disconnect', () => {
   // console.error('Disconnected from server.');
   // process.exit(1);
-  socket.connect();
-
-  // periodically leave and rejoin to avoid being host
-  setInterval(() => {
-    socket.emit('join_private', custom_game_id, user_id);
-    socket.emit('set_force_start', custom_game_id, true);
-    setTimeout(() => {}, 3000);
-    socket.emit('cancel');
-    console.log('emitted cancel');
-  }, 3000);
+  setTimeout(() => {
+    socket.connect();
+  }, 10000);
 });
 
 socket.on('connect', () => {
@@ -40,7 +33,7 @@ socket.on('connect', () => {
   );
   setInterval(() => {
     socket.emit('set_force_start', custom_game_id, true);
-  }, 1000);
+  }, 3000);
 });
 
 // game data
