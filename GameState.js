@@ -154,16 +154,24 @@ class GameState {
       .map((avg) => avg / this.myScore.tiles);
     this.avgTileSize = this.myScore.total / this.myScore.tiles;
 
-    // update enemies as you find them
-    if ((this.currEnemy = -1)) {
-      this.currEnemy = this.terrain.find(
-        (tile, index) =>
-          tile !== this.playerIndex && tile >= 0 && this.isReachable(index)
-      );
-      if (typeof this.currEnemy === 'undefined') {
-        this.currEnemy = -1;
+    // let currEnemy be the enemy you see the most
+    const enemyMap = new Map();
+    this.terrain.forEach((tile, index) => {
+      if (tile !== this.playerIndex && tile >= 0 && this.isReachable(index)) {
+        if (enemyMap.has(tile)) {
+          enemyMap.set(tile, enemyMap.get(tile) + 1);
+        } else {
+          enemyMap.set(tile, 1);
+        }
       }
-    }
+    });
+    enemyMap.forEach((enemyCount, enemy) => {
+      if (this.currEnemy === -1) {
+        this.currEnemy = enemy;
+      } else if (enemyCount > enemyMap.get(this.currEnemy)) {
+        this.currEnemy = enemy;
+      }
+    });
   }
 }
 

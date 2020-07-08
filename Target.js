@@ -57,20 +57,23 @@ class Target {
       }
     }
 
-    const closeEnemy = terrain.reduce((closest, tile, index) => {
+    const closeEnemy = terrain.reduce((largest, tile, index) => {
       if (tile !== playerIndex && tile >= 0 && eDist(crown, index) < 7) {
-        if (closest === -1) {
+        if (largest === -1) {
           return index;
         } else {
-          return eDist(crown, index) < eDist(crown, closest) ? index : closest;
+          return armies[index] - eDist(crown, index) >
+            armies[largest] - eDist(crown, largest)
+            ? index
+            : largest;
         }
       } else {
-        return closest;
+        return largest;
       }
     }, -1);
 
-    // always targetIndex nearby enemies
-    if (closeEnemy !== -1 && this.targetType !== 'close enemy') {
+    // always targetIndex large nearby enemies
+    if (closeEnemy !== -1 /*&& this.targetType !== 'close enemy'*/) {
       this.targetIndex = closeEnemy;
       this.targetType = 'close enemy';
     } else if (foundGenerals.length > 0) {
@@ -80,7 +83,7 @@ class Target {
     } else if (
       // if not busy targetIndex cities if lacking or enemies are afar
       cities.length > numOwnedCities &&
-      myScore.tiles > 10 &&
+      myScore.tiles > 15 &&
       (numOwnedCities < Math.floor(turn / 75) ||
         !terrain.some(
           (tile, index) =>
@@ -93,38 +96,28 @@ class Target {
       this.targetType = 'city';
     } else if (
       // if not busy targetIndex enemy territory
-      // terrain.some((tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index))
+      // terrain.some(
+      //   (tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index)
+      // )
       currEnemy !== -1
     ) {
-      const enemyScore = game.scores.find((score) => score.i === currEnemy);
-      const enemyInfo = terrain.reduce(
-        (info, tile, index) => {
-          if (tile === currEnemy) {
-            info[0] += Math.floor(index / width);
-            info[1] += index % width;
-            info[2]++;
+      const enemyTerritory = terrain.reduce((closest, tile, index) => {
+        if (
+          /*tile !== playerIndex && tile >= 0*/ tile === currEnemy &&
+          isReachable(index)
+        ) {
+          if (closest === -1) {
+            return index;
+          } else {
+            const tDist = eDist(headIndex, index);
+            const cDist = eDist(headIndex, closest);
+            return tDist < cDist ? index : closest;
           }
-          return info;
-        },
-        [0, 0, 0]
-      );
-      enemyInfo[0] = Math.floor(enemyInfo[0] / enemyInfo[2]);
-      enemyInfo[1] = Math.floor(enemyInfo[1] / enemyInfo[2]);
-      // const enemyTerritory = terrain.reduce((closest, tile, index) => {
-      //   if (tile !== playerIndex && tile >= 0 && isReachable(index)) {
-      //     if (closest === -1) {
-      //       return index;
-      //     } else {
-      //       const tDist = eDist(headIndex, index);
-      //       const cDist = eDist(headIndex, closest);
-      //       return tDist < cDist ? index : closest;
-      //     }
-      //   } else {
-      //     return closest;
-      //   }
-      // }, -1);
-      // this.targetIndex = enemyTerritory;
-      this.targetIndex = enemyInfo[0] * width + enemyInfo[1];
+        } else {
+          return closest;
+        }
+      }, -1);
+      this.targetIndex = enemyTerritory;
       this.targetType = 'enemy territory';
     }
 
@@ -172,10 +165,12 @@ class Target {
     let captureCost;
     // eDist(this.startIndex, this.targetIndex) > 15 &&
     if (this.targetType === 'enemyTerritory') {
-      const enemyScore = game.scores.find(
-        (score) => score.i === game.currEnemy
+      captureCost = Math.max(
+        Math.floor(
+          game.myScore.total * Math.pow(0.6, game.myScore.total / 500)
+        ),
+        this.gatherPath.length * avgTileSize
       );
-      captureCost = 10 * Math.floor(enemyScore.total / enemyScore.tiles);
     } else {
       captureCost = armies[this.targetIndex] + 2;
     }
