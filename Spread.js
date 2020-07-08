@@ -18,6 +18,7 @@ const getNextIndex = (
     avgTileSize,
   }
 ) => {
+  console.log(`spreading`);
   // calculate head coordinates
   const row = Math.floor(headIndex / width);
   const col = headIndex % width;
@@ -100,9 +101,6 @@ const getNextIndex = (
   return moves
     .map((m) => headIndex + m)
     .reduce((bestNextIndex, nextIndex) => {
-      console.log(
-        `moveIndex: ${nextIndex}, moveWeight: ${calcWeight(nextIndex)}`
-      );
       const moveWeight = calcWeight(nextIndex);
       const currBestMoveWeight = calcWeight(bestNextIndex);
       return moveWeight < currBestMoveWeight ? nextIndex : bestNextIndex;

@@ -73,6 +73,12 @@ class GameState {
         this.foundGenerals.push(general);
       }
     }
+    if (
+      this.foundGenerals > 0 &&
+      this.terrain[this.foundGenerals[0]] === this.playerIndex
+    ) {
+      this.foundGenerals.shift();
+    }
 
     // calculate army center coordinates
     [this.center.row, this.center.col] = this.terrain

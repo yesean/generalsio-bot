@@ -28,21 +28,13 @@ class Player {
       ) + Math.pow((end % this.game.width) - (start % this.game.width), 2)
     );
 
-  // // manhattan distance
-  // mDist(start, end) {
-  //   return (
-  //     Math.abs(Math.floor(end / this.game.width) - Math.floor(start / this.game.width)) +
-  //     Math.abs((end % this.game.width) - (start % this.game.width))
-  //   );
-  // }
-
   // check if tile can be currently reachable
   reachableTile = (tile) =>
-    terrain[tile - 1] >= TILE_EMPTY ||
-    terrain[tile + 1] >= TILE_EMPTY ||
-    terrain[tile - this.game.width] >= TILE_EMPTY ||
-    terrain[tile + this.game.width] >= TILE_EMPTY ||
-    terrain[tile] >= 0;
+    this.game.terrain[tile - 1] >= TILE_EMPTY ||
+    this.game.terrain[tile + 1] >= TILE_EMPTY ||
+    this.game.terrain[tile - this.game.width] >= TILE_EMPTY ||
+    this.game.terrain[tile + this.game.width] >= TILE_EMPTY ||
+    this.game.terrain[tile] >= 0;
 
   resetHead = (index = -1) => {
     if (index !== -1) {
@@ -68,48 +60,32 @@ class Player {
     console.log(
       `resetting to headIndex ${this.headIndex}, headSize ${this.headSize}`
     );
+    return this.headIndex;
   };
 
   play = (data) => {
     // update game state
     this.game.update(data);
-
-    console.log(
-      `headIndex: ${this.headIndex}, headSize: ${
-        this.game.armies[this.headIndex]
-      }`
-    );
-
-    // reset head if head becomes too small or swallowed
-    if (
-      this.game.armies[this.headIndex] < this.game.avgTileSize ||
-      this.game.terrain[this.headIndex] !== this.playerIndex
-    ) {
-      this.resetHead();
-    }
-    this.headSize = this.game.armies[this.headIndex];
+    this.headSize = this.game.armies[this.headIndex]; // update headSize
+    console.log(`headIndex: ${this.headIndex}, headSize: ${this.headSize}`);
 
     // determine next index
     let nextIndex;
     if (this.target.hasTarget(this, this.game)) {
-      console.log(
-        `targeting ${this.target.targetType} at index ${this.target.target}`
-      );
-      // reset head if head is too far and small from target
-      if (
-        this.eDist(this.headIndex, this.target.target, this.game.width) > 10 &&
-        this.headSize < this.game.avgTileSize
-      ) {
-        this.resetHead();
-      }
       // targeting
       nextIndex = this.target.getNextIndex(this, this.game);
     } else {
-      console.log(`spreading`);
       // spreading
+      // reset head if head becomes too small or swallowed
+      if (
+        this.game.armies[this.headIndex] < this.game.avgTileSize ||
+        this.game.terrain[this.headIndex] !== this.playerIndex
+      ) {
+        this.resetHead();
+      }
       nextIndex = Spread.getNextIndex(this, this.game);
 
-      // update currpath if spreading
+      // update currpath
       if (this.currPath.has(nextIndex)) {
         this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
       } else {
@@ -118,13 +94,9 @@ class Player {
     }
 
     // attack
+    console.log(`attacking index ${nextIndex}`);
     this.socket.emit('attack', this.headIndex, nextIndex);
     this.headIndex = nextIndex; // update headIndex
-    console.log(
-      `going to index ${this.headIndex}, freq: ${this.currPath.get(
-        this.headIndex
-      )}`
-    );
     console.log();
   };
 }
