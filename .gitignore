@@ -1,2 +1,3 @@
 *.env
 *.log
+main[0-9].js
