@@ -35,7 +35,7 @@ socket.on('connect', () => {
     setInterval(() => {
       socket.emit('set_force_start', custom_game_id, true);
     }, 1000);
-  }, 5000);
+  }, 3000);
 });
 
 // game data
@@ -64,7 +64,7 @@ leaveGame = () => {
 
 socket.on('game_lost', (data) => {
   leaveGame();
-  console.log(`defeated by ${data.killer}`);
+  console.log(`defeated by player ${data.killer}`);
 });
 socket.on('game_won', (data) => {
   leaveGame();

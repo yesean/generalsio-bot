@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/seanye24/generalsio-bot#readme",
   "dependencies": {
+    "colors": "^1.4.0",
     "socketio": "^1.0.0"
   },
   "devDependencies": {

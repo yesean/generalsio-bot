@@ -40,6 +40,7 @@ class GameState {
     this.foundGenerals = [];
     this.armies = [];
     this.terrain = [];
+    this.mountains = new Set();
     this.myScore = [];
     this.numOwnedCities = 0;
     this.center = { row: 0, col: 0 };
@@ -64,13 +65,9 @@ class GameState {
   }
 
   // calculate euclidean distance between two tiles
-  eDist = (start, end) =>
-    Math.sqrt(
-      Math.pow(
-        Math.floor(end / this.width) - Math.floor(start / this.width),
-        2
-      ) + Math.pow((end % this.width) - (start % this.width), 2)
-    );
+  dist = (start, end) =>
+    Math.abs(Math.floor(start / this.width) - Math.floor(end / this.width)) +
+    Math.abs((start % this.width) - (end % this.width));
 
   // check if index can be currently reachable
   isReachable = (index) =>
@@ -102,13 +99,27 @@ class GameState {
     this.crown = this.generals[this.playerIndex];
 
     // map data
-    this.cities = patch(this.cities, data.cities_diff);
+    const newCities = patch(this.cities, data.cities_diff);
     this.map = patch(this.map, data.map_diff);
     this.width = this.map[0];
     this.height = this.map[1];
     this.size = this.width * this.height;
     this.armies = this.map.slice(2, this.size + 2);
     this.terrain = this.map.slice(this.size + 2, this.size + 2 + this.size);
+
+    // cache cities
+    for (const city of newCities) {
+      if (this.cities.indexOf(city) === -1) {
+        this.cities.push(city);
+      }
+    }
+
+    // cache mountains
+    this.terrain.forEach((tile, index) => {
+      if (tile === TILE_MOUNTAIN) {
+        this.mountains.add(index);
+      }
+    });
 
     // filter cities
     this.cities = this.cities.filter((city) => this.isReachable(city));

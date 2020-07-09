@@ -1,45 +1,85 @@
 const Game = require('./GameState');
 
-const getNextIndex = (player, game) => {
-  const { headIndex, headSize, currPath } = player;
-  const {
-    playerIndex,
-    width,
-    height,
-    size,
-    cities,
-    armies,
-    terrain,
-    center,
-    avgTileSize,
-    eDist,
-    isValidMove,
-  } = game;
-
-  console.log(`spreading`);
-  // order moves based on center of army
-  const up = center.row < Math.floor(height / 2);
-  const left = center.col < Math.floor(width / 2);
-  let vMoves = up ? [width, -width] : [-width, width];
-  let hMoves = left ? [1, -1] : [-1, 1];
-  let moves;
-  if (Math.random() < 0.5) {
-    moves = [vMoves[0], hMoves[0], vMoves[1], hMoves[1]];
-  } else {
-    moves = [hMoves[0], vMoves[0], hMoves[1], vMoves[1]];
+class Spread {
+  constructor() {
+    this.currPath = new Map();
   }
 
-  // filter out illegal moves
-  moves = moves.filter((move) => isValidMove(headIndex, headIndex + move));
-  // filter out moves into mountains
-  moves = moves.filter((m) => terrain[headIndex + m] !== Game.TILE_MOUNTAIN);
+  resetPath = () => {
+    this.currPath.clear();
+  };
 
-  const calcWeight = (index) => {
+  getAttack = (player, game) => {
+    const { playerIndex, resetHead } = player;
+    let { headIndex, headSize } = player;
+    const {
+      width,
+      height,
+      size,
+      cities,
+      armies,
+      terrain,
+      center,
+      avgTileSize,
+      dist,
+      isValidMove,
+    } = game;
+
+    console.log(`spreading`);
+
+    // reset head if head becomes too small or swallowed
+    if (armies[headIndex] < avgTileSize || terrain[headIndex] !== playerIndex) {
+      resetHead();
+      headIndex = player.headIndex;
+      headSize = player.headSize;
+      this.resetPath();
+      this.currPath.set(headIndex, 1);
+    }
+    // order moves based on center of army
+    const up = center.row < Math.floor(height / 2);
+    const left = center.col < Math.floor(width / 2);
+    let vMoves = up ? [width, -width] : [-width, width];
+    let hMoves = left ? [1, -1] : [-1, 1];
+    let moves;
+    if (Math.random() < 0.5) {
+      moves = [vMoves[0], hMoves[0], vMoves[1], hMoves[1]];
+    } else {
+      moves = [hMoves[0], vMoves[0], hMoves[1], vMoves[1]];
+    }
+
+    // filter out illegal moves
+    moves = moves.filter((move) => isValidMove(headIndex, headIndex + move));
+    // filter out moves into mountains
+    moves = moves.filter(
+      (move) => terrain[headIndex + move] !== Game.TILE_MOUNTAIN
+    );
+
+    const nextIndex = moves
+      .map((move) => headIndex + move)
+      .reduce((bestNextIndex, nextIndex) => {
+        const moveWeight = this.calcWeight(nextIndex, player, game);
+        const currBestMoveWeight = this.calcWeight(bestNextIndex, player, game);
+        return moveWeight < currBestMoveWeight ? nextIndex : bestNextIndex;
+      });
+
+    // update currpath
+    if (this.currPath.has(nextIndex)) {
+      this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
+    } else {
+      this.currPath.set(nextIndex, 1);
+    }
+
+    return [headIndex, nextIndex];
+  };
+
+  calcWeight = (index, player, game) => {
+    const { playerIndex, headIndex, headSize } = player;
+    const { cities, size, armies, terrain, avgTileSize } = game;
     let weight = 0;
 
     // add weight to previous squares in path
-    if (currPath.has(index)) {
-      weight += size * currPath.get(index);
+    if (this.currPath.has(index)) {
+      weight += size * this.currPath.get(index);
     }
 
     // avoid stepping over 1s
@@ -59,7 +99,7 @@ const getNextIndex = (player, game) => {
       if (terrain[index] === playerIndex) {
         weight -= armies[index];
       } else {
-        if (armies[headIndex] > armies[index] + 2) {
+        if (armies[headIndex] > armies[index] + 1) {
           weight -= 2 * size;
         } else {
           weight += size * size;
@@ -78,14 +118,6 @@ const getNextIndex = (player, game) => {
 
     return weight;
   };
+}
 
-  return moves
-    .map((move) => headIndex + move)
-    .reduce((bestNextIndex, nextIndex) => {
-      const moveWeight = calcWeight(nextIndex);
-      const currBestMoveWeight = calcWeight(bestNextIndex);
-      return moveWeight < currBestMoveWeight ? nextIndex : bestNextIndex;
-    });
-};
-
-exports.getNextIndex = getNextIndex;
+module.exports = Spread;

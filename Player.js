@@ -7,12 +7,13 @@ class Player {
     this.socket = socket;
     this.playerIndex = playerIndex;
     this.game = new GameState(this.playerIndex);
+    this.spread = new Spread();
     this.target = new Target();
     this.headIndex = -1;
     this.headSize = 0;
-    this.currPath = new Map();
   }
 
+  // reset head to provided tile or largest
   resetHead = (index = -1) => {
     if (index !== -1) {
       this.headIndex = index;
@@ -32,14 +33,12 @@ class Player {
       }, -1);
     }
     this.headSize = this.game.armies[this.headIndex];
-    this.currPath.clear();
-    this.currPath.set(this.headIndex, 1);
     console.log(
       `resetting to headIndex ${this.headIndex}, headSize ${this.headSize}`
     );
-    return this.headIndex;
   };
 
+  // play one turn
   play = (data) => {
     // update game state
     this.game.update(data);
@@ -47,33 +46,19 @@ class Player {
     console.log(`headIndex: ${this.headIndex}, headSize: ${this.headSize}`);
 
     // determine next index
-    let nextIndex;
+    let start, end;
     if (this.target.hasTarget(this, this.game)) {
       // targeting
-      nextIndex = this.target.getNextIndex(this, this.game);
+      this.spread.resetPath();
+      [start, end] = this.target.getAttack(this, this.game);
     } else {
       // spreading
-      // reset head if head becomes too small or swallowed
-      if (
-        this.game.armies[this.headIndex] < this.game.avgTileSize ||
-        this.game.terrain[this.headIndex] !== this.playerIndex
-      ) {
-        this.resetHead();
-      }
-      nextIndex = Spread.getNextIndex(this, this.game);
-
-      // update currpath
-      if (this.currPath.has(nextIndex)) {
-        this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
-      } else {
-        this.currPath.set(nextIndex, 1);
-      }
+      [start, end] = this.spread.getAttack(this, this.game);
     }
 
-    // attack
-    console.log(`attacking index ${nextIndex}`);
-    this.socket.emit('attack', this.headIndex, nextIndex);
-    this.headIndex = nextIndex; // update headIndex
+    this.socket.emit('attack', start, end); // attack
+    this.headIndex = end; // update headIndex
+    console.log(`attacking index ${end}`);
     console.log();
   };
 }
