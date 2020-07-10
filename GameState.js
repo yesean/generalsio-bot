@@ -45,7 +45,7 @@ class GameState {
     this.numOwnedCities = 0;
     this.center = { row: 0, col: 0 };
     this.avgTileSize = 0;
-    this.currEnemy = -1;
+    this.biggestEnemy = -1;
   }
 
   static get TILE_EMPTY() {
@@ -70,12 +70,15 @@ class GameState {
     Math.abs((start % this.width) - (end % this.width));
 
   // check if index can be currently reachable
-  isReachable = (index) =>
-    (this.terrain[index - 1] >= TILE_EMPTY && index !== 0) ||
-    (this.terrain[index + 1] >= TILE_EMPTY && index !== this.width - 1) ||
-    this.terrain[index - this.width] >= TILE_EMPTY ||
-    this.terrain[index + this.width] >= TILE_EMPTY ||
-    this.terrain[index] >= 0;
+  isReachable = (index) => {
+    const minTile = this.cities.indexOf(index) === -1 ? TILE_EMPTY : 0;
+    return (
+      (this.terrain[index - 1] >= minTile && index !== 0) ||
+      (this.terrain[index + 1] >= minTile && index !== this.width - 1) ||
+      this.terrain[index - this.width] >= minTile ||
+      this.terrain[index + this.width] >= minTile
+    );
+  };
 
   // check if move is valid
   isValidMove = (start, end) => {
@@ -121,9 +124,6 @@ class GameState {
       }
     });
 
-    // filter cities
-    this.cities = this.cities.filter((city) => this.isReachable(city));
-
     // my data
     this.myScore = this.scores.find((score) => score.i === this.playerIndex);
     // number of cities I currently own
@@ -165,7 +165,7 @@ class GameState {
       .map((avg) => avg / this.myScore.tiles);
     this.avgTileSize = this.myScore.total / this.myScore.tiles;
 
-    // let currEnemy be the enemy you see the most
+    // let biggestEnemy be the enemy you see the most
     const enemyMap = new Map();
     this.terrain.forEach((tile, index) => {
       if (tile !== this.playerIndex && tile >= 0 && this.isReachable(index)) {
@@ -176,11 +176,12 @@ class GameState {
         }
       }
     });
+    this.biggestEnemy = -1;
     enemyMap.forEach((enemyCount, enemy) => {
-      if (this.currEnemy === -1) {
-        this.currEnemy = enemy;
-      } else if (enemyCount > enemyMap.get(this.currEnemy)) {
-        this.currEnemy = enemy;
+      if (this.biggestEnemy === -1) {
+        this.biggestEnemy = enemy;
+      } else if (enemyCount > enemyMap.get(this.biggestEnemy)) {
+        this.biggestEnemy = enemy;
       }
     });
   }

@@ -13,6 +13,7 @@ class Target {
     const { playerIndex, headIndex, headSize, resetHead } = player;
     const {
       turn,
+      scores,
       crown,
       cities,
       width,
@@ -22,7 +23,7 @@ class Target {
       foundGenerals,
       myScore,
       numOwnedCities,
-      currEnemy,
+      biggestEnemy,
       dist,
       isReachable,
     } = game;
@@ -99,26 +100,25 @@ class Target {
       this.targetType = 'crown';
     } else if (
       // if not busy targetIndex cities if lacking or enemies are afar
-      cities.length > numOwnedCities &&
-      numOwnedCities < Math.floor(turn / 75)
+      !(
+        biggestEnemy !== -1 &&
+        scores.find((score) => score.i === biggestEnemy).total < myScore.total
+      ) &&
+      numOwnedCities < Math.floor(turn / 75) &&
+      cities.some((city) => terrain[city] !== playerIndex && isReachable(city))
     ) {
-      targetIndex = cities
-        .filter((city) => terrain[city] !== playerIndex)
-        .reduce((min, c) => (dist(crown, c) < dist(crown, min) ? c : min));
+      // calculate closest city to crown
+      const closestCity = cities
+        .filter((city) => terrain[city] !== playerIndex && isReachable(city))
+        .reduce((min, city) =>
+          dist(crown, city) < dist(crown, min) ? city : min
+        );
+      targetIndex = closestCity;
       this.targetType = 'city';
-    } else if (
-      // if not busy targetIndex enemy territory
-      // terrain.some(
-      //   (tile, index) => tile !== playerIndex && tile >= 0 && isReachable(index)
-      // )
-      currEnemy !== -1
-    ) {
+    } else if (biggestEnemy !== -1) {
+      // target enemy closest to head
       const enemyTerritory = terrain.reduce((closest, tile, index) => {
-        if (
-          /*tile !== playerIndex && tile >= 0*/
-          tile === currEnemy &&
-          isReachable(index)
-        ) {
+        if (tile === biggestEnemy && isReachable(index)) {
           if (closest === -1) {
             return index;
           } else {
@@ -135,13 +135,15 @@ class Target {
     }
 
     if (targetIndex !== -1) {
-      // reset head if head is too far from target
+      // reset head if head is too far or too close from target and not enough
       if (
         dist(headIndex, targetIndex) > Math.floor(width / 2 + height / 2) ||
         (dist(headIndex, targetIndex) <= 2 &&
           armies[headIndex] < armies[targetIndex] / 2)
       ) {
-        console.log(`resetting head bc head and target are too far`);
+        console.log(
+          `resetting head bc head and target are too far or too close`
+        );
         resetHead();
       }
       console.log(`targeting ${this.targetType} at index ${targetIndex}`);
@@ -155,7 +157,7 @@ class Target {
 
   getAttack = (player, game) => {
     const { playerIndex, headIndex, resetHead } = player;
-    const { width, height, armies, terrain, avgTileSize, dist } = game;
+    const { crown, width, height, armies, terrain, avgTileSize, dist } = game;
     // reset path if mountain is hit
     if (
       this.gatherPath.length > 1 &&
@@ -173,14 +175,11 @@ class Target {
       this.setTargetPath(headIndex, this.targetPath.slice(-1)[0], player, game);
     }
 
-    // if current path isn't enough, gather troops on path
     let captureCost;
-    // if (this.targetType === 'enemy territory') {
-    //   captureCost = game.myScore.total - this.getPathSum(game);
-    // } else {
-    //   captureCost = armies[this.targetPath.slice(-1)[0]] + 1;
-    // }
     captureCost = armies[this.targetPath.slice(-1)[0]] + 1;
+    if (dist(this.targetPath.slice(-1)[0], crown) > width / 2 + height / 2) {
+      captureCost *= 2;
+    }
     console.log(`capture cost: ${captureCost}`);
     if (this.gatherPath.length === 0 && this.getPathSum(game) < captureCost) {
       console.log(`calculating gather`);
@@ -230,6 +229,7 @@ class Target {
     if (this.gatherPath.length > 0) {
       return [this.gatherPath.shift(), this.gatherPath[0]];
     } else {
+      this.printPath(game);
       return [this.targetPath.shift(), this.targetPath[0]];
     }
   };
@@ -239,7 +239,6 @@ class Target {
     console.log(`running dijkstra's from ${start} to ${end}`);
     // this.targetPath = this.dijkstra(start, end, game);
     this.targetPath = this.aStar(start, end, game);
-    this.printPath(game);
   };
 
   setGatherPath = (start, end, player, game) => {
@@ -484,8 +483,10 @@ class Target {
       }
       if (i === this.targetPath.slice(-1)[0]) {
         grid += 'O'.green;
-      } else if (this.targetPath.indexOf(i) !== -1) {
+      } else if (i === this.targetPath[0]) {
         grid += 'O'.red;
+      } else if (this.targetPath.indexOf(i) !== -1) {
+        grid += 'O'.white;
       } else if (
         (game.terrain[i] === Game.TILE_FOG_OBSTACLE &&
           game.cities.indexOf(i) === -1) ||
