@@ -15,11 +15,11 @@ const username = process.env.USERNAME;
 const custom_game_id = process.env.GAME_ID;
 
 socket.on('disconnect', () => {
-  // console.error('Disconnected from server.');
-  // process.exit(1);
-  setTimeout(() => {
-    socket.connect();
-  }, 10000);
+  console.error('Disconnected from server.');
+  process.exit(1);
+  // setTimeout(() => {
+  //   socket.connect();
+  // }, 10000);
 });
 
 socket.on('connect', () => {
@@ -63,10 +63,10 @@ leaveGame = () => {
 };
 
 socket.on('game_lost', (data) => {
-  leaveGame();
   console.log(`defeated by player ${data.killer}`);
+  leaveGame();
 });
 socket.on('game_won', (data) => {
-  leaveGame();
   console.log(`congrats on winning!`);
+  leaveGame();
 });

@@ -1,12 +1,15 @@
 const Game = require('./GameState');
 
 const colors = require('colors');
+const { performance } = require('perf_hooks');
 
 class Target {
   constructor() {
     this.targetType = '';
     this.targetPath = [];
+    this.targetPathCenter = -1;
     this.gatherPath = [];
+    this.gatherCloseSet = new Set();
   }
 
   hasTarget = (player, game) => {
@@ -36,6 +39,7 @@ class Target {
     ) {
       console.log(`killing crown`);
       this.targetPath = [headIndex, foundGenerals[0]];
+      this.targetType = 'kill crown';
       return true;
     }
 
@@ -54,6 +58,7 @@ class Target {
         return largest;
       }
     }, -1);
+
     // always targetIndex large nearby enemies
     if (
       closeEnemy !== -1 &&
@@ -82,6 +87,7 @@ class Target {
       if (terrain[this.targetPath.slice(-1)[0]] === playerIndex) {
         this.targetPath = [];
         this.targetType = '';
+        this.gatherCloseSet.clear();
         console.log(`finished targeting`);
       } else {
         console.log(
@@ -158,6 +164,7 @@ class Target {
   getAttack = (player, game) => {
     const { playerIndex, headIndex, resetHead } = player;
     const { crown, width, height, armies, terrain, avgTileSize, dist } = game;
+
     // reset path if mountain is hit
     if (
       this.gatherPath.length > 1 &&
@@ -175,47 +182,110 @@ class Target {
       this.setTargetPath(headIndex, this.targetPath.slice(-1)[0], player, game);
     }
 
-    let captureCost;
-    captureCost = armies[this.targetPath.slice(-1)[0]] + 1;
-    if (dist(this.targetPath.slice(-1)[0], crown) > width / 2 + height / 2) {
+    // calculate cost to capture target
+    let captureCost = armies[this.targetPath.slice(-1)[0]] + 1;
+    // if target is far, increase cost
+    if (
+      this.targetType !== 'kill crown' &&
+      dist(this.targetPath.slice(-1)[0], crown) > width / 2 + height / 2
+    ) {
       captureCost *= 2;
     }
     console.log(`capture cost: ${captureCost}`);
-    if (this.gatherPath.length === 0 && this.getPathSum(game) < captureCost) {
-      console.log(`calculating gather`);
-      const [pathCenterRow, pathCenterCol] = this.targetPath
-        .reduce(
-          (pos, index) => {
-            pos[0] += Math.floor(index / width);
-            pos[1] += index % width;
-            return pos;
-          },
-          [0, 0]
-        )
-        .map((pos) => Math.floor(pos / this.targetPath.length));
-      console.log(
-        `pathCenterRow: ${pathCenterRow}, pathCenterCol: ${pathCenterCol}`
+
+    // reset targetPath if enemy territory is too big
+    if (
+      this.targetType === 'enemy territory' &&
+      this.getPathSum(game) < captureCost
+    ) {
+      resetHead();
+      this.setTargetPath(
+        player.headIndex,
+        this.targetPath.slice(-1)[0],
+        player,
+        game
       );
-      const pathCenter = pathCenterRow * width + pathCenterCol;
+    }
+
+    // determine whether gather close troops
+    const gatherClose =
+      this.gatherPath.length === 0 &&
+      this.targetType === 'enemy territory' &&
+      this.targetPath.length > 2 &&
+      captureCost - this.getPathSum(game) > 50 &&
+      game.myScore.total -
+        game.scores.find((score) => score.i === game.biggestEnemy).total <
+        100 &&
+      terrain.some(
+        (tile, index) =>
+          !this.gatherCloseSet.has(index) &&
+          tile === playerIndex &&
+          armies[index] > avgTileSize &&
+          this.targetPath.indexOf(index) === -1 &&
+          dist(index, crown) < (width / 2 + height / 2) / 4
+        // (dist(index, this.targetPathCenter) < (width / 2 + height / 2) / 4 ||
+        //   dist(index, this.targetPath[0]) < (width / 2 + height / 2) / 4 ||
+        //   dist(index, this.targetPath.slice(-1)[0]) <
+        //     (width / 2 + height / 2) / 4)
+      );
+    if (gatherClose) {
+      const index = terrain.findIndex(
+        (tile, index) =>
+          !this.gatherCloseSet.has(index) &&
+          tile === playerIndex &&
+          armies[index] > avgTileSize &&
+          this.targetPath.indexOf(index) === -1 &&
+          dist(index, crown) < (width / 2 + height / 2) / 4
+        // (dist(index, this.targetPathCenter) < (width / 2 + height / 2) / 4 ||
+        //   dist(index, this.targetPath[0]) < (width / 2 + height / 2) / 4 ||
+        //   dist(index, this.targetPath.slice(-1)[0]) <
+        //     (width / 2 + height / 2) / 4)
+      );
+      console.log(`index: ${index}, armies[index]: ${armies[index]}`);
+    }
+    console.log(`gathering close: ${gatherClose}`);
+    console.log(`gatherCloseSet size: ${this.gatherCloseSet.size}`);
+
+    // calculate gather path
+    if (
+      gatherClose ||
+      (this.gatherPath.length === 0 && this.getPathSum(game) < captureCost)
+    ) {
+      console.log(`calculating gather`);
       const gatherStartIndex = terrain.reduce((best, tile, index) => {
+        const distToTargetPath = gatherClose
+          ? (width / 2 + height / 2) / 4
+          : width * height;
+        const gathered = gatherClose ? this.gatherCloseSet.has(index) : false;
         if (
+          !gathered &&
           tile === playerIndex &&
           this.targetPath.indexOf(index) === -1 &&
-          armies[index] > 1
+          armies[index] > 1 &&
+          dist(index, crown) < distToTargetPath
+          // (dist(index, this.targetPathCenter) < distToTargetPathCenter ||
+          //   dist(index, this.targetPath[0]) < distToTargetPathCenter ||
+          //   dist(index, this.targetPath.slice(-1)[0]) < distToTargetPathCenter)
         ) {
           if (best === -1) {
             return index;
           } else {
-            const tileWeight =
-              Math.pow(armies[index], 1.5) / dist(index, pathCenter);
-            const bestWeight =
-              Math.pow(armies[best], 1.5) / dist(index, pathCenter);
+            const tileWeight = gatherClose
+              ? (armies[index] * dist(index, this.targetPathCenter)) / 2
+              : Math.pow(armies[index], 1.5) /
+                dist(index, this.targetPathCenter);
+            const bestWeight = gatherClose
+              ? (armies[best] * dist(best, this.targetPathCenter)) / 2
+              : Math.pow(armies[best], 1.5) / dist(best, this.targetPathCenter);
             return tileWeight > bestWeight ? index : best;
           }
         } else {
           return best;
         }
       }, -1);
+      if (gatherClose) {
+        this.gatherCloseSet.add(gatherStartIndex);
+      }
       const gatherTargetIndex = this.targetPath.reduce((min, index) =>
         dist(gatherStartIndex, index) < dist(gatherStartIndex, min)
           ? index
@@ -227,25 +297,47 @@ class Target {
     }
 
     if (this.gatherPath.length > 0) {
+      this.printPath(game, this.gatherPath);
       return [this.gatherPath.shift(), this.gatherPath[0]];
     } else {
-      this.printPath(game);
+      this.printPath(game, this.targetPath);
       return [this.targetPath.shift(), this.targetPath[0]];
     }
   };
 
   setTargetPath = (start, end, player, game) => {
     // calculate path
-    console.log(`running dijkstra's from ${start} to ${end}`);
+    console.log(`running astar from ${start} to ${end}`);
     // this.targetPath = this.dijkstra(start, end, game);
+    const t0 = performance.now();
     this.targetPath = this.aStar(start, end, game);
+    const t1 = performance.now();
+    console.log(`astar took ${t1 - t0} ms to compute`);
+
+    const [pathCenterRow, pathCenterCol] = this.targetPath
+      .reduce(
+        (pos, index) => {
+          pos[0] += Math.floor(index / game.width);
+          pos[1] += index % game.width;
+          return pos;
+        },
+        [0, 0]
+      )
+      .map((pos) => Math.floor(pos / this.targetPath.length));
+    console.log(
+      `pathCenterRow: ${pathCenterRow}, pathCenterCol: ${pathCenterCol}`
+    );
+    this.targetPathCenter = pathCenterRow * game.width + pathCenterCol;
   };
 
   setGatherPath = (start, end, player, game) => {
     // calculate path
-    console.log(`running dijkstra's from ${start} to ${end}`);
+    console.log(`running astar from ${start} to ${end}`);
     // this.gatherPath = this.dijkstra(start, end, game, true);
+    const t0 = performance.now();
     this.gatherPath = this.aStar(start, end, game, true);
+    const t1 = performance.now();
+    console.log(`astar took ${t1 - t0} ms to compute`);
   };
 
   getPathSum = (game) => {
@@ -261,9 +353,7 @@ class Target {
         sum -= 50;
       }
     }
-    console.log(
-      `pathsum: ${sum}, armies[target]: ${armies[this.targetPath.slice(-1)[0]]}`
-    );
+    console.log(`pathsum: ${sum}`);
     return sum;
   };
 
@@ -366,7 +456,6 @@ class Target {
         // ignore impossible moves
         const nextIndex = currIndex + move;
         if (
-          // terrain[nextIndex] === Game.TILE_MOUNTAIN ||
           game.mountains.has(nextIndex) ||
           !isValidMove(currIndex, nextIndex)
         ) {
@@ -470,7 +559,7 @@ class Target {
     }
   };
 
-  printPath = (game) => {
+  printPath = (game, path) => {
     let grid = '';
     grid += ' ';
     for (let i = 0; i < game.width; i++) {
@@ -481,11 +570,11 @@ class Target {
       if (i % game.width === 0) {
         grid += '|';
       }
-      if (i === this.targetPath.slice(-1)[0]) {
+      if (i === path.slice(-1)[0]) {
         grid += 'O'.green;
-      } else if (i === this.targetPath[0]) {
-        grid += 'O'.red;
-      } else if (this.targetPath.indexOf(i) !== -1) {
+      } else if (i === path[0]) {
+        grid += 'O'.yellow;
+      } else if (path.indexOf(i) !== -1) {
         grid += 'O'.white;
       } else if (
         (game.terrain[i] === Game.TILE_FOG_OBSTACLE &&
@@ -493,7 +582,7 @@ class Target {
         // game.terrain[i] === Game.TILE_MOUNTAIN
         game.mountains.has(i)
       ) {
-        grid += 'X'.gray;
+        grid += 'X'.red;
       } else {
         grid += ' ';
       }

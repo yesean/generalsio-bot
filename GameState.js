@@ -119,7 +119,7 @@ class GameState {
 
     // cache mountains
     this.terrain.forEach((tile, index) => {
-      if (tile === TILE_MOUNTAIN) {
+      if (!this.mountains.has(index) && tile === TILE_MOUNTAIN) {
         this.mountains.add(index);
       }
     });
