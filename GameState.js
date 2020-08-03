@@ -94,7 +94,7 @@ class GameState {
   };
 
   // update game state
-  update(data) {
+  update(player, data) {
     // game data
     this.turn = data.turn;
     this.scores = data.scores;
@@ -107,6 +107,8 @@ class GameState {
     this.width = this.map[0];
     this.height = this.map[1];
     this.size = this.width * this.height;
+    const prevArmies = [...this.armies];
+    const prevTerrain = [...this.terrain];
     this.armies = this.map.slice(2, this.size + 2);
     this.terrain = this.map.slice(this.size + 2, this.size + 2 + this.size);
 
@@ -128,31 +130,33 @@ class GameState {
     this.myScore = this.scores.find((score) => score.i === this.playerIndex);
     // number of cities I currently own
     this.numOwnedCities = this.cities.filter(
-      (city) => this.terrain[city] === this.playerIndex
+      // (city) => this.terrain[city] === this.playerIndex
+      (city) => player.team.has(this.terrain[city])
     ).length;
+
     // update located crowns
-    for (const general of this.generals) {
+    this.generals.forEach((gen, pIndex) => {
       if (
-        general !== -1 &&
-        general !== this.crown &&
-        this.foundGenerals.indexOf(general) === -1
+        gen !== -1 &&
+        gen !== this.crown &&
+        !player.team.has(pIndex) &&
+        !this.foundGenerals.find((fg) => fg.index === gen)
       ) {
-        this.foundGenerals.push(general);
+        this.foundGenerals.push({ index: gen, playerIndex: pIndex });
       }
-    }
+    });
+
     // remove captured crowns
-    if (
-      this.foundGenerals.length > 0 &&
-      this.terrain[this.foundGenerals[0]] === this.playerIndex
-    ) {
-      this.foundGenerals.shift();
-    }
+    this.foundGenerals = this.foundGenerals.filter(
+      (fg) => !this.scores.find((score) => score.i === fg.playerIndex).dead
+    );
 
     // calculate army center coordinates
     [this.center.row, this.center.col] = this.terrain
       .reduce(
         (acc, tile, index) => {
-          if (tile === this.playerIndex) {
+          // if (tile === this.playerIndex) {
+          if (player.team.has(tile)) {
             const row = Math.floor(index / this.width);
             const col = index % this.width;
             acc[0] += row;
@@ -168,7 +172,8 @@ class GameState {
     // let biggestEnemy be the enemy you see the most
     const enemyMap = new Map();
     this.terrain.forEach((tile, index) => {
-      if (tile !== this.playerIndex && tile >= 0 && this.isReachable(index)) {
+      // if (tile !== this.playerIndex && tile >= 0 && this.isReachable(index)) {
+      if (!player.team.has(tile) && tile >= 0 && this.isReachable(index)) {
         if (enemyMap.has(tile)) {
           enemyMap.set(tile, enemyMap.get(tile) + 1);
         } else {
@@ -184,6 +189,7 @@ class GameState {
         this.biggestEnemy = enemy;
       }
     });
+    return [prevArmies, prevTerrain];
   }
 }
 

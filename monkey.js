@@ -11,9 +11,10 @@ const io = require('socket.io-client');
 const socket = io('http://botws.generals.io');
 
 // define user id and username
-const user_id = process.env.USER_ID;
-const username = process.env.USERNAME;
+const user_id = process.env.MONKEY;
+const username = process.env.MONKEY;
 const custom_game_id = process.env.GAME_ID;
+const team_id = process.env.TEAM_ONE;
 
 socket.on('disconnect', () => {
   console.error('Disconnected from server.');
@@ -24,7 +25,6 @@ socket.on('disconnect', () => {
 });
 
 socket.on('connect', () => {
-  socket.emit('set_username', user_id, username);
   console.log('Connected to server.');
   socket.emit('join_private', custom_game_id, user_id);
   console.log(
@@ -33,18 +33,28 @@ socket.on('connect', () => {
     )}`
   );
 
+  setInterval(() => {
+    socket.emit('set_custom_team', custom_game_id, team_id);
+  }, 1000);
   setTimeout(() => {
     setInterval(() => {
       socket.emit('set_force_start', custom_game_id, true);
     }, 1000);
-  }, 3000);
+  }, 5000);
 });
 
 // game data
 let player;
+let team = new Set();
 
 socket.on('game_start', (data) => {
-  player = new Player(socket, data.playerIndex);
+  const teamId = data.teams[data.playerIndex];
+  data.teams.forEach((t, playerIndex) => {
+    if (t === teamId) {
+      team.add(playerIndex);
+    }
+  });
+  player = new Player(socket, data.playerIndex, team);
   let replay_url = `http://bot.generals.io/replays/${encodeURIComponent(
     data.replay_id
   )}`;

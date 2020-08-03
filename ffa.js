@@ -1,6 +1,5 @@
 require('dotenv').config();
 const Player = require('./Player');
-const { performance } = require('perf_hooks');
 
 // only for the first time
 // set username for bot
@@ -16,27 +15,19 @@ const username = process.env.USERNAME;
 const custom_game_id = process.env.GAME_ID;
 
 socket.on('disconnect', () => {
-  console.error('Disconnected from server.');
-  process.exit(1);
-  // setTimeout(() => {
-  //   socket.connect();
-  // }, 10000);
+  // console.error('Disconnected from server.');
+  // process.exit(1);
+  setTimeout(() => { socket.connect(); }, 10000);
 });
 
 socket.on('connect', () => {
-  socket.emit('set_username', user_id, username);
+  socket.emit("set_username", user_id, username);
   console.log('Connected to server.');
-  socket.emit('join_private', custom_game_id, user_id);
-  console.log(
-    `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
-      custom_game_id
-    )}`
-  );
+  socket.emit('play', user_id);
 
   setTimeout(() => {
-    setInterval(() => {
-      socket.emit('set_force_start', custom_game_id, true);
-    }, 1000);
+    setInterval(() => { socket.emit('set_force_start', custom_game_id, true); },
+                1000);
   }, 3000);
 });
 
@@ -45,24 +36,15 @@ let player;
 
 socket.on('game_start', (data) => {
   player = new Player(socket, data.playerIndex);
-  let replay_url = `http://bot.generals.io/replays/${encodeURIComponent(
-    data.replay_id
-  )}`;
-  console.log(
-    `Game starting! The replay will be available after the game at ${replay_url}`
-  );
+  let replay_url =
+      `http://bot.generals.io/replays/${encodeURIComponent(data.replay_id)}`;
+  console.log(`Game starting! The replay will be available after the game at ${
+      replay_url}`);
 });
 
 socket.on('game_update', (data) => {
-  const startOfTurn = performance.now();
-
-  console.log('turn', data.turn);
-  const [start, end] = player.play(data);
-  socket.emit('attack', start, end);
-
-  const endOfTurn = performance.now();
-  console.log('turn took', endOfTurn - startOfTurn, 'ms to compute');
-  console.log();
+  console.log(`on turn ${data.turn}`);
+  player.play(data);
 });
 
 leaveGame = () => {

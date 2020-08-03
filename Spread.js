@@ -10,8 +10,7 @@ class Spread {
   };
 
   getAttack = (player, game) => {
-    const { playerIndex, resetHead } = player;
-    let { headIndex, headSize } = player;
+    const { playerIndex, headIndex, headSize, resetHead } = player;
     const {
       width,
       height,
@@ -27,14 +26,6 @@ class Spread {
 
     console.log(`spreading`);
 
-    // reset head if head becomes too small or swallowed
-    if (armies[headIndex] < avgTileSize || terrain[headIndex] !== playerIndex) {
-      resetHead();
-      headIndex = player.headIndex;
-      headSize = player.headSize;
-      this.resetPath();
-      this.currPath.set(headIndex, 1);
-    }
     // order moves based on center of army
     const up = center.row < Math.floor(height / 2);
     const left = center.col < Math.floor(width / 2);
@@ -63,10 +54,13 @@ class Spread {
       });
 
     // update currpath
-    if (this.currPath.has(nextIndex)) {
-      this.currPath.set(nextIndex, this.currPath.get(nextIndex) + 1);
+    if (this.currPath.has(player.headIndex)) {
+      this.currPath.set(
+        player.headIndex,
+        this.currPath.get(player.headIndex) + 1
+      );
     } else {
-      this.currPath.set(nextIndex, 1);
+      this.currPath.set(player.headIndex, 1);
     }
 
     return [headIndex, nextIndex];
@@ -84,7 +78,8 @@ class Spread {
 
     // avoid stepping over 1s
     // underweight blank tiles
-    if (terrain[index] === playerIndex && armies[index] === 1) {
+    // if (terrain[index] === playerIndex && armies[index] === 1) {
+    if (player.team.has(terrain[index]) && armies[index] === 1) {
       weight += size;
     } else if (
       terrain[index] === Game.TILE_EMPTY &&
@@ -96,7 +91,8 @@ class Spread {
     // if city mine, decrease its weight
     // if not, avoid unless capturable
     if (cities.indexOf(index) >= 0) {
-      if (terrain[index] === playerIndex) {
+      // if (terrain[index] === playerIndex) {
+      if (player.team.has(terrain[index])) {
         weight -= armies[index];
       } else {
         if (armies[headIndex] > armies[index] + 1) {
@@ -109,7 +105,8 @@ class Spread {
 
     // underweight reasonably high tiles if headSize is small
     if (
-      terrain[index] === playerIndex &&
+      // terrain[index] === playerIndex &&
+      player.team.has(terrain[index]) &&
       armies[index] > 1 &&
       headSize < avgTileSize
     ) {
