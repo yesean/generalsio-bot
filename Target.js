@@ -51,16 +51,17 @@ class Target {
       this.targetType = '';
     }
 
+    let targetIndex = -1;
     if (
       foundGenerals.length > 0 &&
-      dist(foundGenerals[0].index, headIndex) === 1 &&
+      game.dist(foundGenerals[0].index, headIndex) <= 2 &&
       headSize > armies[foundGenerals[0].index] + 1
     ) {
       // kill crown if possible
       console.log(`killing crown`);
-      this.targetPath = [headIndex, foundGenerals[0].index];
+      // this.targetPath = [headIndex, foundGenerals[0].index];
+      targetIndex = foundGenerals[0].index;
       this.targetType = 'kill crown';
-      return true;
     }
 
     // reset target if cannot be seen anymore
@@ -74,12 +75,13 @@ class Target {
     }
 
     // target close enemies if it is only close enemy or a closer one has been located
-    const closestEnemy = this.getClosestEnemy(player, game);
+    const closestEnemy = this.getBestCloseEnemy(player, game);
     if (
       closestEnemy !== -1 &&
       (this.targetType !== 'close enemy' ||
         closestEnemy !== this.targetPath[this.targetPath.length - 1])
     ) {
+      this.clearAllPaths();
       console.log('targeting close enemy at', closestEnemy);
       this.targetType = 'close enemy';
       this.setTargetPath(player.headIndex, closestEnemy, player, game);
@@ -121,7 +123,6 @@ class Target {
       return true;
     }
 
-    let targetIndex = -1;
     if (foundGenerals.length > 0) {
       // if not busy, target enemy crown
       targetIndex = foundGenerals[0].index;
@@ -132,16 +133,25 @@ class Target {
       this.targetType = 'city';
     } else if (biggestEnemy !== -1) {
       // if not busy, target enemy territory
-      targetIndex = this.getBestEnemyTerritory(player, game);
+      // targetIndex = this.getBestEnemyTerritory(player, game);
       this.targetType = 'enemy territory';
+      targetIndex = 0;
     }
 
     if (targetIndex !== -1) {
       // reset head if head is too far or too close from target and not enough
-      console.log('targeting from', player.headIndex, 'to', targetIndex);
-      console.log(`targeting ${this.targetType} at index ${targetIndex}`);
 
-      this.setTargetPath(player.headIndex, targetIndex, player, game);
+      if (this.targetType === 'enemy territory') {
+        this.targetPath = Algorithms.dijkstra(
+          player.headIndex,
+          game.biggestEnemy,
+          player,
+          game,
+          true
+        );
+      } else {
+        this.setTargetPath(player.headIndex, targetIndex, player, game);
+      }
       const potentialTargetPathSum = this.getPathSum(
         this.targetPath,
         player,
@@ -156,8 +166,29 @@ class Target {
           "resetting head bc targetPath isn't sufficient and head and target are too close"
         );
         resetHead(game.crown);
-        this.setTargetPath(player.headIndex, targetIndex, player, game);
+        if (this.targetType === 'enemy territory') {
+          this.targetPath = Algorithms.dijkstra(
+            player.headIndex,
+            game.biggestEnemy,
+            player,
+            game,
+            true
+          );
+        } else {
+          this.setTargetPath(player.headIndex, targetIndex, player, game);
+        }
       }
+      console.log(
+        'targeting from',
+        player.headIndex,
+        'to',
+        this.targetPath[this.targetPath.length - 1]
+      );
+      console.log(
+        `targeting ${this.targetType} at index ${
+          this.targetPath[this.targetPath.length - 1]
+        }`
+      );
       return true;
     }
 
@@ -173,14 +204,7 @@ class Target {
         } else {
           const tDist = game.dist(player.headIndex, index);
           const cDist = game.dist(player.headIndex, closest);
-          // if (tDist <= 2 && cDist <= 2) {
-          //   return Math.random() <
-          //     game.armies[closest] / (game.armies[index] + game.armies[closest])
-          //     ? index
-          //     : closest;
-          // } else {
           return tDist < cDist ? index : closest;
-          // }
         }
       } else {
         return closest;
@@ -214,18 +238,19 @@ class Target {
       }
     }, null);
     console.log('closestBiggestEnemy:', closestBiggestEnemy);
+    const unsafeDist = Math.floor(game.width / 2.5 + game.height / 2.5);
     const isBiggestEnemyAThreat =
       game.biggestEnemy !== -1 &&
       game.scores.find((score) => score.i === game.biggestEnemy).total >
         game.myScore.total &&
       closestBiggestEnemy &&
-      closestBiggestEnemy.dist < 15;
+      closestBiggestEnemy.dist < unsafeDist;
 
     // target cities if enemies aren't a huge threat and cities are lacking
     return (
       !isBiggestEnemyAThreat &&
       game.numOwnedCities < Math.floor(game.turn / 75) &&
-      game.turn % 10 === 0 &&
+      game.turn % 15 === 0 &&
       game.cities.some(
         (city) =>
           // game.terrain[city] !== player.playerIndex && game.isReachable(city)
@@ -234,23 +259,27 @@ class Target {
     );
   };
 
-  getClosestEnemy = (player, game) => {
+  getBestCloseEnemy = (player, game) => {
     // calculate any nearby enemies
-    const unsafeDist = 7;
+    const unsafeDist = Math.floor(game.width / 4 + game.height / 4);
     const closestEnemy = game.terrain.reduce((largest, tile, index) => {
       if (
         // tile !== player.playerIndex &&
         !player.team.has(tile) &&
         tile >= 0 &&
-        game.dist(game.crown, index) < unsafeDist
+        // game.dist(game.crown, index) < unsafeDist &&
+        game.generals
+          .filter((g, i) => player.team.has(i))
+          .some((teamCrown) => game.dist(teamCrown, index) < unsafeDist)
       ) {
         if (largest === -1) {
           return index;
         } else {
-          return game.armies[index] - game.dist(game.crown, index) >
-            game.armies[largest] - game.dist(game.crown, largest)
-            ? index
-            : largest;
+          // return game.armies[index] - game.dist(game.crown, index) >
+          //   game.armies[largest] - game.dist(game.crown, largest)
+          //   ? index
+          //   : largest;
+          return game.armies[index] > game.armies[largest] ? index : largest;
         }
       } else {
         return largest;
@@ -267,7 +296,7 @@ class Target {
     if (this.gatherPath.length > 1 && game.mountains.has(this.gatherPath[1])) {
       console.log('hit gather mountain');
       this.setGatherPath(
-        headIndex,
+        player.headIndex,
         this.gatherPath[this.gatherPath.length - 1],
         player,
         game
@@ -278,7 +307,7 @@ class Target {
     ) {
       console.log('hit target mountain');
       this.setTargetPath(
-        headIndex,
+        player.headIndex,
         this.targetPath[this.targetPath.length - 1],
         player,
         game
@@ -291,17 +320,17 @@ class Target {
 
     if (this.targetPath.length > 0) {
       console.log('targetPath:', this.targetPath);
-    }
-
-    if (this.gatherPath.length > 0) {
-      console.log('gatherPath:', this.gatherPath);
+      this.printPath(game, this.targetPath);
     }
 
     if (this.gatherPath.length > 0) {
       this.printPath(game, this.gatherPath);
+      console.log('gatherPath:', this.gatherPath);
+    }
+
+    if (this.gatherPath.length > 0) {
       return [this.gatherPath.shift(), this.gatherPath[0]];
     } else {
-      this.printPath(game, this.targetPath);
       return [this.targetPath.shift(), this.targetPath[0]];
     }
   };
@@ -359,7 +388,10 @@ class Target {
         if (!best) {
           return gatherPathObj;
         } else {
-          return gatherPathSum > best.gatherPathSum ? gatherPathObj : best;
+          return gatherPathSum / Math.sqrt(gatherPath.length) >
+            best.gatherPathSum / Math.sqrt(best.gatherPath.length)
+            ? gatherPathObj
+            : best;
         }
       } else {
         return best;
@@ -386,14 +418,24 @@ class Target {
 
     // gather if target path doesn't provide enough troops
     // or more troops can be used for enemy territory targeting
+    if (bestGatherPathObj) {
+      console.log(
+        'gatherPath length:',
+        bestGatherPathObj.gatherPath.length,
+        'length restriction',
+        game.width / 5 + game.height / 5
+      );
+    }
     if (
       bestGatherPathObj &&
       this.targetType !== 'kill crown' &&
       (targetPathSum <= captureCost ||
-        (this.targetType === 'enemy territory' &&
-          bestGatherPathObj.gatherPathSum > targetPathSumMyTroops &&
+        ((this.targetType === 'enemy territory' ||
+          this.targetType === 'crown') &&
+          // bestGatherPathObj.gatherPathSum > targetPathSumMyTroops &&
+          bestGatherPathObj.gatherPathSum > 2 * game.avgTileSize &&
           bestGatherPathObj.gatherPath.length <
-            game.width / 4 + game.height / 4))
+            game.width / 5 + game.height / 5))
     ) {
       console.log(
         'gathering from',
@@ -417,7 +459,7 @@ class Target {
 
   setGatherPath = (start, end, player, game) => {
     // calculate path
-    this.gatherPath = Algorithms.aStar(start, end, player, game, true);
+    this.gatherPath = Algorithms.aStar(start, end, player, game);
   };
 
   getPathSum = (path, player, game) => {

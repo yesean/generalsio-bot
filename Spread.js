@@ -1,12 +1,15 @@
-const Game = require('./GameState');
+const Game = require('./GameState.js');
+const Algorithms = require('./Algorithms.js');
 
 class Spread {
   constructor() {
     this.currPath = new Map();
+    this.spreadPath = [];
   }
 
   resetPath = () => {
     this.currPath.clear();
+    this.spreadPath = [];
   };
 
   getAttack = (player, game) => {
@@ -25,6 +28,17 @@ class Spread {
     } = game;
 
     console.log(`spreading`);
+    if (this.spreadPath.length > 1) {
+      return [this.spreadPath.shift(), this.spreadPath[0]];
+    } else {
+      this.spreadPath = Algorithms.dijkstra(
+        player.headIndex,
+        Game.TILE_EMPTY,
+        player,
+        game
+      );
+      return [this.spreadPath.shift(), this.spreadPath[0]];
+    }
 
     // order moves based on center of army
     const up = center.row < Math.floor(height / 2);

@@ -1,7 +1,8 @@
 const Game = require('./GameState.js');
+const GameState = require('./GameState.js');
 
 // calculate path to targetIndex with dijkstra's
-const dijkstra = (start, end, player, game, gather = false) => {
+const dijkstra = (start, end, player, game, targetingEnemy = false) => {
   const { playerIndex } = player;
   const { armies, terrain, cities, width, height, isValidMove } = game;
   let prev = new Map();
@@ -10,12 +11,17 @@ const dijkstra = (start, end, player, game, gather = false) => {
 
   let visited = new Set();
   let pqueue = [start];
+  let currIndex;
   const moves = [-1, 1, -width, width];
   while (pqueue.length > 0) {
-    const currIndex = pqueue.shift();
+    currIndex = pqueue.shift();
 
     // terminate search if targetIndex is found
-    if (currIndex === end) {
+    // if (currIndex === end) {
+    if (
+      game.terrain[currIndex] === end &&
+      (end !== Game.TILE_EMPTY || !game.cities.includes(currIndex))
+    ) {
       break;
     }
 
@@ -23,12 +29,16 @@ const dijkstra = (start, end, player, game, gather = false) => {
     for (const move of moves) {
       // ignore impossible moves
       const nextIndex = currIndex + move;
-      if (game.mountains.has(nextIndex) || !isValidMove(currIndex, nextIndex)) {
+      if (
+        game.mountains.has(nextIndex) ||
+        !isValidMove(currIndex, nextIndex) ||
+        (end === Game.TILE_EMPTY && game.cities.includes(nextIndex))
+      ) {
         continue;
       }
 
       const moveWeight =
-        weights[currIndex] + calcWeight(nextIndex, player, game, gather);
+        weights[currIndex] + calcWeight(nextIndex, player, game, targetingEnemy);
 
       // insert move if it hasn't been explored and costs less than it currently does
       if (!visited.has(nextIndex) && moveWeight < weights[nextIndex]) {
@@ -47,7 +57,7 @@ const dijkstra = (start, end, player, game, gather = false) => {
 
   // determine shortest path
   const path = [];
-  let prevIndex = end;
+  let prevIndex = currIndex;
   while (prevIndex !== undefined) {
     path.unshift(prevIndex);
     prevIndex = prev.get(prevIndex);
@@ -56,7 +66,7 @@ const dijkstra = (start, end, player, game, gather = false) => {
 };
 
 // calculate path to targetIndex with aStar
-const aStar = (start, end, player, game, gather = false) => {
+const aStar = (start, end, player, game, targetingEnemy = false) => {
   const { playerIndex } = player;
   const { armies, terrain, cities, width, height, isValidMove } = game;
   let prev = new Map();
@@ -76,14 +86,21 @@ const aStar = (start, end, player, game, gather = false) => {
     }
 
     for (const move of moves) {
-      // ignore mountains and out of bounds moves
+      // ignore mountains and out of bounds moves and team crowns
       const nextIndex = currIndex + move;
-      if (game.mountains.has(nextIndex) || !isValidMove(currIndex, nextIndex)) {
+      if (
+        game.mountains.has(nextIndex) ||
+        !isValidMove(
+          currIndex,
+          nextIndex ||
+            player.team.has(game.generals.findIndex((gen) => gen === nextIndex))
+        )
+      ) {
         continue;
       }
 
       const moveWeight =
-        weights[currIndex] + calcWeight(nextIndex, player, game, gather);
+        weights[currIndex] + calcWeight(nextIndex, player, game, targetingEnemy);
 
       // insert move if it hasn't been explored and costs less than it currently does
       if (!visited.has(nextIndex) && moveWeight < weights[nextIndex]) {
@@ -95,7 +112,7 @@ const aStar = (start, end, player, game, gather = false) => {
         if (position !== -1) {
           pqueue.splice(position, 1);
         }
-        insert(pqueue, nextIndex, weights, end, game, gather);
+        insert(pqueue, nextIndex, weights, end, game, targetingEnemy);
       }
     }
   }
@@ -110,19 +127,29 @@ const aStar = (start, end, player, game, gather = false) => {
   return path;
 };
 
-const calcWeight = (nextIndex, player, game, gather) => {
-  let moveWeight = 1;
+const calcWeight = (nextIndex, player, game, targetingEnemy = false) => {
   // player tiles are weighted to favor higher tiles
   // fog obstacles are weighted as potential city cost
   // enemy tiles and empty cities are weighted as their capture cost
   // if (game.terrain[nextIndex] === game.playerIndex) {
-  if (player.team.has(game.terrain[nextIndex])) {
-    if (gather) {
-      moveWeight -= game.armies[nextIndex];
-    }
-  } else if (game.terrain[nextIndex] === Game.TILE_FOG_OBSTACLE) {
-    moveWeight += 50; // approx city capture cost
-  } else {
+  let moveWeight = 1;
+  // if (player.team.has(game.terrain[nextIndex])) {
+  //   if (targetingEnemy) {
+  //     moveWeight -= game.armies[nextIndex];
+  //   } else {
+  //     moveWeight -= Math.floor(game.armies[nextIndex] / game.avgTileSize / 2);
+  //   }
+  // } else if (game.terrain[nextIndex] === Game.TILE_FOG_OBSTACLE) {
+  //   moveWeight += 50; // approx city capture cost
+  // } else {
+  //   moveWeight += game.armies[nextIndex];
+  // }
+  if (
+    !targetingEnemy &&
+    (!player.team.has(game.terrain[nextIndex]) ||
+      (game.terrain[nextIndex] === Game.TILE_EMPTY &&
+        !game.cities.includes(nextIndex)))
+  ) {
     moveWeight += game.armies[nextIndex];
   }
   return moveWeight;
@@ -132,9 +159,9 @@ const heuristic = (start, end, game) => game.dist(start, end);
 
 // insert tile into priority queue for dijkstra and astar
 // targetIndex and game are optional for astar
-const insert = (array, index, weights, targetIndex, game, gather = false) => {
-  const weightScale = gather ? 0.3 : 1;
-  const heuristicScale = gather ? 0.7 : 1;
+const insert = (array, index, weights, targetIndex, game, targetingEnemy = false) => {
+  const weightScale = targetingEnemy ? 0.3 : 1;
+  const heuristicScale = targetingEnemy ? 0.7 : 1;
   let added = false;
   for (let i = 0; i < array.length; ++i) {
     const currIndexHeuristic = targetIndex

@@ -1,5 +1,5 @@
 require('dotenv').config();
-const Player = require('./Player');
+const Player = require('./../Player');
 const { performance } = require('perf_hooks');
 
 // only for the first time
@@ -14,15 +14,15 @@ const socket = io('http://botws.generals.io');
 const user_id = process.env.CHIMP;
 const username = process.env.CHIMP;
 const custom_game_id = process.env.GAME_ID;
-const team_id = process.env.TEAM_TWO;
+const team_id = process.env.CHIMP_TEAM;
 
 socket.on('disconnect', () => {
   console.error('Disconnected from server.');
   process.exit(1);
-  // setTimeout(() => {
-  //   socket.connect();
-  // }, 10000);
 });
+
+let setTeam;
+let setForceStart;
 
 socket.on('connect', () => {
   console.log('Connected to server.');
@@ -33,13 +33,15 @@ socket.on('connect', () => {
     )}`
   );
 
-  setInterval(() => {
+  setTeam = setInterval(() => {
     socket.emit('set_custom_team', custom_game_id, team_id);
   }, 1000);
+
   setTimeout(() => {
-    setInterval(() => {
-      socket.emit('set_force_start', custom_game_id, true);
-    }, 1000);
+    setForceStart = setInterval(
+      () => socket.emit('set_force_start', custom_game_id, true),
+      1000
+    );
   }, 5000);
 });
 
@@ -48,6 +50,9 @@ let player;
 let team = new Set();
 
 socket.on('game_start', (data) => {
+  clearInterval(setTeam);
+  clearInterval(setForceStart);
+
   const teamId = data.teams[data.playerIndex];
   data.teams.forEach((t, playerIndex) => {
     if (t === teamId) {

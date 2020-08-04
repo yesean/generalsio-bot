@@ -130,8 +130,8 @@ class GameState {
     this.myScore = this.scores.find((score) => score.i === this.playerIndex);
     // number of cities I currently own
     this.numOwnedCities = this.cities.filter(
-      // (city) => this.terrain[city] === this.playerIndex
-      (city) => player.team.has(this.terrain[city])
+      (city) => this.terrain[city] === this.playerIndex
+      // (city) => player.team.has(this.terrain[city])
     ).length;
 
     // update located crowns
