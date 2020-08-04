@@ -29,19 +29,24 @@ const dijkstra = (start, end, player, game, targetingEnemy = false) => {
     for (const move of moves) {
       // ignore impossible moves
       const nextIndex = currIndex + move;
-      if (
-        game.mountains.has(nextIndex) ||
-        !isValidMove(currIndex, nextIndex) ||
-        (end === Game.TILE_EMPTY && game.cities.includes(nextIndex))
-      ) {
+      if (game.mountains.has(nextIndex) || !isValidMove(currIndex, nextIndex)) {
         continue;
       }
 
-      const moveWeight =
-        weights[currIndex] + calcWeight(nextIndex, player, game, targetingEnemy);
+      let moveWeight =
+        weights[currIndex] +
+        calcWeight(nextIndex, player, game, targetingEnemy);
 
-      // insert move if it hasn't been explored and costs less than it currently does
+      if (
+        end === Game.TILE_EMPTY &&
+        game.terrain[nextIndex] === Game.TILE_EMPTY &&
+        game.cities.includes(nextIndex)
+      ) {
+        moveWeight += 10000;
+      }
+
       if (!visited.has(nextIndex) && moveWeight < weights[nextIndex]) {
+        // insert move if it hasn't been explored and costs less than it currently does
         weights[nextIndex] = moveWeight;
         prev.set(nextIndex, currIndex);
 
@@ -100,7 +105,8 @@ const aStar = (start, end, player, game, targetingEnemy = false) => {
       }
 
       const moveWeight =
-        weights[currIndex] + calcWeight(nextIndex, player, game, targetingEnemy);
+        weights[currIndex] +
+        calcWeight(nextIndex, player, game, targetingEnemy);
 
       // insert move if it hasn't been explored and costs less than it currently does
       if (!visited.has(nextIndex) && moveWeight < weights[nextIndex]) {
@@ -159,7 +165,14 @@ const heuristic = (start, end, game) => game.dist(start, end);
 
 // insert tile into priority queue for dijkstra and astar
 // targetIndex and game are optional for astar
-const insert = (array, index, weights, targetIndex, game, targetingEnemy = false) => {
+const insert = (
+  array,
+  index,
+  weights,
+  targetIndex,
+  game,
+  targetingEnemy = false
+) => {
   const weightScale = targetingEnemy ? 0.3 : 1;
   const heuristicScale = targetingEnemy ? 0.7 : 1;
   let added = false;

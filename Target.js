@@ -264,21 +264,20 @@ class Target {
     const unsafeDist = Math.floor(game.width / 4 + game.height / 4);
     const closestEnemy = game.terrain.reduce((largest, tile, index) => {
       if (
-        // tile !== player.playerIndex &&
         !player.team.has(tile) &&
         tile >= 0 &&
-        // game.dist(game.crown, index) < unsafeDist &&
-        game.generals
+        (game.generals
           .filter((g, i) => player.team.has(i))
-          .some((teamCrown) => game.dist(teamCrown, index) < unsafeDist)
+          .some((teamCrown) => game.dist(teamCrown, index) < unsafeDist) ||
+          this.getPathSum(
+            Algorithms.aStar(game.crown, index, player, game),
+            player,
+            game
+          ) < game.armies[index])
       ) {
         if (largest === -1) {
           return index;
         } else {
-          // return game.armies[index] - game.dist(game.crown, index) >
-          //   game.armies[largest] - game.dist(game.crown, largest)
-          //   ? index
-          //   : largest;
           return game.armies[index] > game.armies[largest] ? index : largest;
         }
       } else {
@@ -295,12 +294,16 @@ class Target {
     // reset gather or target path if mountain is hit
     if (this.gatherPath.length > 1 && game.mountains.has(this.gatherPath[1])) {
       console.log('hit gather mountain');
-      this.setGatherPath(
-        player.headIndex,
-        this.gatherPath[this.gatherPath.length - 1],
-        player,
-        game
-      );
+      if (this.gatherPath.length === 2) {
+        this.gatherPath = [];
+      } else {
+        this.setGatherPath(
+          player.headIndex,
+          this.gatherPath[this.gatherPath.length - 1],
+          player,
+          game
+        );
+      }
     } else if (
       this.targetPath.length > 1 &&
       game.mountains.has(this.targetPath[1])

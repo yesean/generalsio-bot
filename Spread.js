@@ -31,12 +31,14 @@ class Spread {
     if (this.spreadPath.length > 1) {
       return [this.spreadPath.shift(), this.spreadPath[0]];
     } else {
+      console.log('calculating spreadPath to empty tile');
       this.spreadPath = Algorithms.dijkstra(
         player.headIndex,
         Game.TILE_EMPTY,
         player,
         game
       );
+      console.log('spreadPath:', this.spreadPath);
       return [this.spreadPath.shift(), this.spreadPath[0]];
     }
 

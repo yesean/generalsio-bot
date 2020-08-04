@@ -3,8 +3,7 @@ const Spread = require('./Spread');
 const Target = require('./Target');
 
 class Player {
-  constructor(socket, playerIndex, team) {
-    this.socket = socket;
+  constructor(playerIndex, team) {
     this.playerIndex = playerIndex;
     this.team = team;
     this.game = new GameState(this.playerIndex);
@@ -13,6 +12,7 @@ class Player {
     this.headIndex = -1;
     this.headSize = 0;
     this.prevMove = null;
+    this.skippedTurns = 0;
   }
 
   // reset head to provided tile or largest
@@ -55,6 +55,7 @@ class Player {
       prevTerrain[this.prevMove.end] === this.game.terrain[this.prevMove.end]
     ) {
       console.log("skipping turn bc prevMove hasn't been processed");
+      this.skippedTurns++;
       return [-1, -1];
     }
     this.headSize = this.game.armies[this.headIndex]; // update headSize
