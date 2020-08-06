@@ -51,7 +51,6 @@ class Target {
       this.targetType = '';
     }
 
-    let targetIndex = -1;
     if (
       foundGenerals.length > 0 &&
       game.dist(foundGenerals[0].index, headIndex) <= 2 &&
@@ -59,9 +58,15 @@ class Target {
     ) {
       // kill crown if possible
       console.log(`killing crown`);
-      // this.targetPath = [headIndex, foundGenerals[0].index];
-      targetIndex = foundGenerals[0].index;
+      this.clearAllPaths();
       this.targetType = 'kill crown';
+      this.setTargetPath(
+        player.headIndex,
+        foundGenerals[0].index,
+        player,
+        game
+      );
+      return true;
     }
 
     // reset target if cannot be seen anymore
@@ -74,15 +79,49 @@ class Target {
       this.targetPath = [];
     }
 
+    const incomingHead = this.getBestIncomingHead(player, game);
+    if (
+      incomingHead !== -1 &&
+      (this.targetType !== 'incoming head' ||
+        incomingHead !== this.targetPath[this.targetPath.length - 1])
+    ) {
+      this.clearAllPaths();
+      this.targetType = 'incoming head';
+      this.setTargetPath(player.headIndex, incomingHead, player, game);
+
+      // reset head to crown if current target path is insufficent
+      const potentialTargetPathSum = this.getPathSum(
+        this.targetPath,
+        player,
+        game
+      );
+      if (potentialTargetPathSum <= game.armies[incomingHead]) {
+        resetHead(game.crown);
+        this.setTargetPath(player.headIndex, incomingHead, player, game);
+      }
+      console.log(
+        'targeting from',
+        player.headIndex,
+        'to',
+        this.targetPath[this.targetPath.length - 1]
+      );
+      console.log(
+        `targeting ${this.targetType} at index ${
+          this.targetPath[this.targetPath.length - 1]
+        }`
+      );
+      return true;
+    }
+
     // target close enemies if it is only close enemy or a closer one has been located
     const closestEnemy = this.getBestCloseEnemy(player, game);
     if (
       closestEnemy !== -1 &&
+      this.targetType !== 'incoming head' &&
       (this.targetType !== 'close enemy' ||
         closestEnemy !== this.targetPath[this.targetPath.length - 1])
     ) {
       this.clearAllPaths();
-      console.log('targeting close enemy at', closestEnemy);
       this.targetType = 'close enemy';
       this.setTargetPath(player.headIndex, closestEnemy, player, game);
 
@@ -96,6 +135,17 @@ class Target {
         resetHead(game.crown);
         this.setTargetPath(player.headIndex, closestEnemy, player, game);
       }
+      console.log(
+        'targeting from',
+        player.headIndex,
+        'to',
+        this.targetPath[this.targetPath.length - 1]
+      );
+      console.log(
+        `targeting ${this.targetType} at index ${
+          this.targetPath[this.targetPath.length - 1]
+        }`
+      );
       return true;
     }
 
@@ -123,6 +173,7 @@ class Target {
       return true;
     }
 
+    let targetIndex = -1;
     if (foundGenerals.length > 0) {
       // if not busy, target enemy crown
       targetIndex = foundGenerals[0].index;
@@ -266,15 +317,52 @@ class Target {
       if (
         !player.team.has(tile) &&
         tile >= 0 &&
-        (game.generals
+        game.generals
           .filter((g, i) => player.team.has(i))
-          .some((teamCrown) => game.dist(teamCrown, index) < unsafeDist) ||
-          this.getPathSum(
-            Algorithms.aStar(game.crown, index, player, game),
-            player,
-            game
-          ) < game.armies[index])
+          .some((teamCrown) => game.dist(teamCrown, index) < unsafeDist)
       ) {
+        if (largest === -1) {
+          return index;
+        } else {
+          if (game.armies[index] === game.armies[largest]) {
+            return game.dist(index, game.crown) > game.dist(largest, game.crown)
+              ? index
+              : largest;
+          } else {
+            return game.armies[index] > game.armies[largest] ? index : largest;
+          }
+        }
+      } else {
+        return largest;
+      }
+    }, -1);
+    return closestEnemy;
+  };
+
+  getBestIncomingHead = (player, game) => {
+    const bestHead = game.terrain.reduce((largest, tile, index) => {
+      let isHeadDangerous = false;
+      const isHeadRelativelyLarge =
+        !player.team.has(tile) &&
+        tile >= 0 &&
+        game.armies[index] > game.armies[game.crown];
+      if (isHeadRelativelyLarge) {
+        const headPath = Algorithms.aStar(game.crown, index, player, game);
+        let pathSum = headPath.reduce((sum, headPathSq) => {
+          if (
+            player.team.has(game.terrain[headPathSq]) &&
+            headPathSq !== player.headIndex
+          ) {
+            sum += game.armies[headPathSq];
+          } else if (game.terrain[headPathSq]) {
+            sum += 50;
+          } else {
+            sum -= game.armies[headPathSq] - 1;
+          }
+        });
+        isHeadDangerous = pathSum <= game.armies[index];
+      }
+      if (isHeadDangerous) {
         if (largest === -1) {
           return index;
         } else {
@@ -284,7 +372,7 @@ class Target {
         return largest;
       }
     }, -1);
-    return closestEnemy;
+    return bestHead;
   };
 
   getAttack = (player, game) => {
@@ -344,15 +432,12 @@ class Target {
     const bestGatherPathObj = game.terrain.reduce((best, tile, index) => {
       if (
         tile === player.playerIndex &&
-        // player.team.has(tile) &&
         !this.targetPath.includes(index) &&
         game.armies[index] > 1
       ) {
         const closestPathIndex = this.targetPath
           .slice(0, -1)
           .reduce((closestObj, targetPathSq) => {
-            // const indexDist = Algorithms.aStar(index, targetPathSq, game, true)
-            //   .length;
             const indexDist = game.dist(index, targetPathSq);
             const indexObj = { index: targetPathSq, dist: indexDist };
             if (!closestObj) {
@@ -370,7 +455,6 @@ class Target {
         );
         const gatherPathSum = gatherPath.reduce((sum, targetPathSq) => {
           if (!this.targetPath.includes(targetPathSq)) {
-            // if (game.terrain[targetPathSq] === player.playerIndex) {
             if (player.team.has(game.terrain[targetPathSq])) {
               return sum + game.armies[targetPathSq] - 1;
             } else if (game.terrain[targetPathSq] === Game.TILE_FOG_OBSTACLE) {
@@ -408,7 +492,6 @@ class Target {
     const targetPathSum = this.getPathSum(this.targetPath, player, game);
     const targetPathSumMyTroops = this.targetPath.reduce(
       (sum, targetPathSq) => {
-        // if (game.terrain[targetPathSq] === player.playerIndex) {
         if (player.team.has(game.terrain[targetPathSq])) {
           return sum + game.armies[targetPathSq] - 1;
         } else {
@@ -435,10 +518,9 @@ class Target {
       (targetPathSum <= captureCost ||
         ((this.targetType === 'enemy territory' ||
           this.targetType === 'crown') &&
-          // bestGatherPathObj.gatherPathSum > targetPathSumMyTroops &&
           bestGatherPathObj.gatherPathSum > 2 * game.avgTileSize &&
           bestGatherPathObj.gatherPath.length <
-            game.width / 5 + game.height / 5))
+            game.width / 4 + game.height / 4))
     ) {
       console.log(
         'gathering from',

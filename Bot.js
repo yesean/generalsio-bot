@@ -11,22 +11,34 @@ class Bot {
     this.team = new Set();
 
     socket.on('disconnect', () => {
-      console.error('Disconnected from server.');
-      process.exit(1);
+      // console.error('Disconnected from server.');
+      // process.exit(1);
+      socket.connect();
     });
 
     socket.on('connect', () => {
       console.log('Connected to server.');
-      socket.emit('join_private', custom_game_id, user_id);
-      console.log(
-        `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
-          custom_game_id
-        )}`
-      );
-
-      this.setTeam = setInterval(() => {
-        socket.emit('set_custom_team', custom_game_id, team_id);
-      }, 1000);
+      switch (custom_game_id) {
+        case '1v1':
+          socket.emit('join_1v1', user_id);
+          console.log('Joined 1v1');
+          break;
+        case 'ffa':
+          socket.emit('play', user_id);
+          console.log('Joined FFA');
+          break;
+          break;
+        default:
+          socket.emit('join_private', custom_game_id, user_id);
+          console.log(
+            `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
+              custom_game_id
+            )}`
+          );
+          this.setTeam = setInterval(() => {
+            socket.emit('set_custom_team', custom_game_id, team_id);
+          }, 1000);
+      }
 
       setTimeout(() => {
         this.setForceStart = setInterval(
@@ -40,12 +52,15 @@ class Bot {
       clearInterval(this.setTeam);
       clearInterval(this.setForceStart);
 
-      const teamId = data.teams[data.playerIndex];
-      data.teams.forEach((t, playerIndex) => {
-        if (t === teamId) {
-          this.team.add(playerIndex);
-        }
-      });
+      this.team.add(data.playerIndex);
+      if (data.teams) {
+        const teamId = data.teams[data.playerIndex];
+        data.teams.forEach((t, playerIndex) => {
+          if (t === teamId) {
+            this.team.add(playerIndex);
+          }
+        });
+      }
       this.player = new Player(data.playerIndex, this.team);
       let replay_url = `http://bot.generals.io/replays/${encodeURIComponent(
         data.replay_id
