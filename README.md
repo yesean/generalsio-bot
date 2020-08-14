@@ -1,2 +1,2 @@
-# generals-bot
-Bot for generals io.
+# generalsio-bot
+Bot for generals.io
