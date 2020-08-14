@@ -1,54 +1,54 @@
 const Player = require('./Player');
-const { performance } = require('perf_hooks');
+const {performance} = require('perf_hooks');
 const io = require('socket.io-client');
-const socket = io('http://botws.generals.io');
 
+let botCount = 0;
 class Bot {
-  constructor(user_id, username, custom_game_id, team_id) {
-    this.setTeam = null;
-    this.setForceStart = null;
+  constructor(user_id, username, game_id, team_id) {
+    this.socket = io('http://botws.generals.io');
     this.player = null;
     this.team = new Set();
+    this.setTeam = null;
+    this.setForceStart = null;
 
-    socket.on('disconnect', () => {
-      // console.error('Disconnected from server.');
-      // process.exit(1);
-      socket.connect();
+    this.socket.on('disconnect', () => {
+      console.error('Disconnected from server.');
+      if (--botCount === 0) {
+        process.exit(1);
+      }
     });
 
-    socket.on('connect', () => {
+    this.socket.on('connect', () => {
       console.log('Connected to server.');
-      switch (custom_game_id) {
-        case '1v1':
-          socket.emit('join_1v1', user_id);
-          console.log('Joined 1v1');
-          break;
-        case 'ffa':
-          socket.emit('play', user_id);
-          console.log('Joined FFA');
-          break;
-          break;
-        default:
-          socket.emit('join_private', custom_game_id, user_id);
-          console.log(
-            `Joined custom game at http://bot.generals.io/games/${encodeURIComponent(
-              custom_game_id
-            )}`
-          );
-          this.setTeam = setInterval(() => {
-            socket.emit('set_custom_team', custom_game_id, team_id);
-          }, 1000);
+      botCount++;
+      this.socket.emit('set_username', user_id, username);
+      switch (game_id) {
+      case '1v1':
+        this.socket.emit('join_1v1', user_id);
+        console.log('Joined 1v1');
+        break;
+      case 'ffa':
+        this.socket.emit('play', user_id);
+        console.log('Joined FFA');
+        break;
+      default:
+        this.socket.emit('join_private', game_id, user_id);
+        console.log(`Joined custom game at http://bot.generals.io/games/${
+            encodeURIComponent(game_id)}`);
+        if (team_id >= 1 && team_id <= 8) {
+          this.setTeam = setInterval(
+              () => { this.socket.emit('set_custom_team', game_id, team_id); },
+              1000);
+        }
       }
 
       setTimeout(() => {
         this.setForceStart = setInterval(
-          () => socket.emit('set_force_start', custom_game_id, true),
-          1000
-        );
+            () => this.socket.emit('set_force_start', game_id, true), 1000);
       }, 5000);
     });
 
-    socket.on('game_start', (data) => {
+    this.socket.on('game_start', (data) => {
       clearInterval(this.setTeam);
       clearInterval(this.setForceStart);
 
@@ -62,41 +62,40 @@ class Bot {
         });
       }
       this.player = new Player(data.playerIndex, this.team);
-      let replay_url = `http://bot.generals.io/replays/${encodeURIComponent(
-        data.replay_id
-      )}`;
+      let replay_url = `http://bot.generals.io/replays/${
+          encodeURIComponent(data.replay_id)}`;
       console.log(
-        `Game starting! The replay will be available after the game at ${replay_url}`
-      );
+          `Game starting! The replay will be available after the game at ${
+              replay_url}`);
     });
 
-    socket.on('game_update', (data) => {
+    this.socket.on('game_update', (data) => {
       const startOfTurn = performance.now();
 
       console.log('turn', data.turn);
       const [start, end] = this.player.play(data);
-      socket.emit('attack', start, end);
+      this.socket.emit('attack', start, end);
 
       const endOfTurn = performance.now();
       console.log('turn took', endOfTurn - startOfTurn, 'ms to compute');
       console.log();
     });
 
-    socket.on('game_lost', (data) => {
+    this.socket.on('game_lost', (data) => {
       console.log(`defeated by player ${data.killer}`);
       this.leaveGame();
     });
 
-    socket.on('game_won', (data) => {
+    this.socket.on('game_won', (data) => {
       console.log(`congrats on winning!`);
       this.leaveGame();
     });
   }
+
   leaveGame = () => {
     console.log('skipped', this.player.skippedTurns, 'turns');
-    socket.emit('leave_game');
-    console.log('left game');
-    socket.disconnect();
+    this.socket.emit('leave_game');
+    this.socket.disconnect();
   };
 }
 
