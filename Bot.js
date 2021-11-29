@@ -12,10 +12,13 @@ class Bot {
     this.setForceStart = null;
 
     this.socket.on('disconnect', () => {
+      this.socket.connect();
+      /*
       console.error('Disconnected from server.');
       if (--botCount === 0) {
         process.exit(1);
       }
+      */
     });
 
     this.socket.on('connect', () => {
